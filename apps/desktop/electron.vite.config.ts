@@ -7,7 +7,13 @@ export default defineConfig({
     build: { externalizeDeps: true, rollupOptions: { input: resolve('src/main/index.ts') } }
   },
   preload: {
-    build: { externalizeDeps: true, rollupOptions: { input: resolve('src/preload/index.ts') } }
+    build: {
+      externalizeDeps: false,
+      rollupOptions: {
+        input: resolve('src/preload/index.ts'),
+        output: { format: 'cjs', entryFileNames: '[name].cjs', inlineDynamicImports: true }
+      }
+    }
   },
   renderer: {
     root: resolve('src/renderer'),

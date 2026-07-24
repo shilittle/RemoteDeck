@@ -1,0 +1,22 @@
+appId: io.github.shilittle.remotedeck
+productName: RemoteDeck
+executableName: RemoteDeck
+asar: true
+directories:
+  output: release
+files:
+  - out/**/*
+  - package.json
+afterPack: scripts/after-pack.cjs
+win:
+  target:
+    - nsis
+    - portable
+  artifactName: ${productName}-${version}-${arch}-${target}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  deleteAppDataOnUninstall: false
+

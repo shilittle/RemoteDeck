@@ -1,0 +1,37 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { _electron as electron, expect, test } from '@playwright/test'
+import type { ElectronApplication } from '@playwright/test'
+import type { RemoteDeckApi } from '../../src/protocol/ipc'
+
+test('renderer is sandboxed and settings round-trip through validated IPC', async () => {
+  test.setTimeout(60_000)
+  const appDirectory = resolve(import.meta.dirname, '../..')
+  const userData = await mkdtemp(join(tmpdir(), 'remotedeck-e2e-'))
+  let application: ElectronApplication | null = null
+  try {
+    application = await test.step('launch the packaged renderer build', () => electron.launch({
+      args: [appDirectory],
+      cwd: appDirectory,
+      env: { ...process.env, REMOTEDECK_E2E_USER_DATA: userData, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true' }
+    }))
+    await test.step('verify sandbox and validated settings IPC', async () => {
+      if (!application) throw new Error('Electron application did not launch')
+      const firstWindow = await application.firstWindow()
+      await firstWindow.waitForLoadState('domcontentloaded')
+      expect(await firstWindow.locator('body').innerText()).toContain('RemoteDeck')
+      const boundary = await firstWindow.evaluate(() => ({
+        nodeGlobalPresent: 'process' in globalThis,
+        apiKeys: Object.keys((globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck).sort()
+      }))
+      expect(boundary).toEqual({ nodeGlobalPresent: false, apiKeys: ['app', 'settings'] })
+      await firstWindow.evaluate(() => (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck.settings.update({ terminalFontSize: 17 }))
+      const snapshot = await firstWindow.evaluate(() => (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck.app.bootstrap())
+      expect(snapshot.settings.terminalFontSize).toBe(17)
+    })
+  } finally {
+    if (application) await test.step('close Electron', () => application?.close())
+    await test.step('remove isolated user data', () => rm(userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }))
+  }
+})

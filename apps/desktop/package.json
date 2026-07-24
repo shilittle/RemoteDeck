@@ -10,13 +10,16 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "test:e2e": "playwright test",
+    "test:e2e": "pnpm build && playwright test",
     "build": "electron-vite build",
     "dist:win": "pnpm build && electron-builder --win nsis portable --x64"
   },
   "dependencies": {
+    "lucide-react": "1.26.0",
+    "pino": "10.3.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "zustand": "5.0.14",
     "zod": "4.4.3"
   },
   "devDependencies": {
@@ -37,4 +40,3 @@
     "vitest": "4.1.10"
   }
 }
-

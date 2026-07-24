@@ -14,5 +14,5 @@
     "esModuleInterop": true,
     "noEmit": true
   },
-  "include": ["*.config.ts", "src/main/**/*.ts", "src/preload/**/*.ts", "src/shared/**/*.ts", "tests/**/*.ts"]
+  "include": ["*.config.ts", "src/core/**/*.ts", "src/main/**/*.ts", "src/preload/**/*.ts", "src/protocol/**/*.ts", "tests/**/*.ts"]
 }

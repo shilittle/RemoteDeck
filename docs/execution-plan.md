@@ -4,9 +4,9 @@ The development specification is the highest-level contract. Milestones are sequ
 
 | Milestone | Scope | Status | Verification evidence | Commit |
 | --- | --- | --- | --- | --- |
-| M0 | Baseline audit, legacy preservation, branch, repository instructions, workspace shell | Complete | `pnpm lint`, `pnpm typecheck`, `pnpm test` (1), `pnpm build`; Electron 43.2.0 shell launch smoke; legacy PowerShell parse and blob-preservation checks | Pending |
-| M1 | Secure Electron boundaries, schemas, persistence, logging, base workbench, CI | In progress | Pending | Pending |
-| M2 | Hosts, OpenSSH config, host keys, authentication, diagnostics, key lifecycle | Pending | Pending | Pending |
+| M0 | Baseline audit, legacy preservation, branch, repository instructions, workspace shell | Complete | `pnpm lint`, `pnpm typecheck`, `pnpm test` (1), `pnpm build`; Electron 43.2.0 shell launch smoke; legacy PowerShell parse and blob-preservation checks | `4179e26` |
+| M1 | Secure Electron boundaries, schemas, persistence, logging, base workbench, CI | Complete | `pnpm verify`; 13 unit, 1 integration, 1 Electron E2E; production build; settings restart persistence; sandbox/no-Node/narrow-IPC checks | Pending |
+| M2 | Hosts, OpenSSH config, host keys, authentication, diagnostics, key lifecycle | In progress | Pending | Pending |
 | M3 | xterm PTY, tabs, resize, Unicode/IME, search, links, reconnect | Pending | Pending | Pending |
 | M4 | SFTP tree, CRUD, recursive transfers, conflict/cancel/progress, drag/drop | Pending | Pending | Pending |
 | M5 | Local/remote tunnels, dedicated sessions, health/recovery, proxy detection | Pending | Pending | Pending |
