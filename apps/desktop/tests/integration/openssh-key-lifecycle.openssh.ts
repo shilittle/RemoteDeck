@@ -177,7 +177,8 @@ describe('Docker OpenSSH password-to-key lifecycle', () => {
       await tunnels.stop(localTunnel.id)
       expect(await (await fetch(`http://127.0.0.1:${String(remoteForwardPort)}/`)).text()).toBe('REMOTE_FORWARD_OK')
       expect((await tunnels.list(profile.host.id)).find((item) => item.profile.id === localTunnel.id)?.state).toBe('stopped')
-      expect((await tunnels.list(profile.host.id)).find((item) => item.profile.id === remoteTunnel.id)?.state).toBe('online')
+      await waitForTunnelOnline(tunnels, remoteTunnel.id)
+      expect(await (await fetch(`http://127.0.0.1:${String(remoteForwardPort)}/`)).text()).toBe('REMOTE_FORWARD_OK')
     } finally {
       await tunnels.stopAll()
       targetSockets.forEach((socket) => socket.destroy())
@@ -261,6 +262,23 @@ async function waitForTelemetry(telemetry: TelemetryService, hostId: string, pre
     const status = telemetry.status(hostId)
     if (status.state === 'dependency_missing' || status.state === 'failed') throw new Error(status.lastError ?? status.state)
     if (Date.now() >= deadline) throw new Error(`Timed out waiting for telemetry: ${JSON.stringify(status)}`)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+}
+
+async function waitForTunnelOnline(tunnels: TunnelService, tunnelId: string): Promise<void> {
+  const deadline = Date.now() + 15_000
+  let onlineSince: number | undefined
+  for (;;) {
+    const snapshot = (await tunnels.list()).find((item) => item.profile.id === tunnelId)
+    if (snapshot?.state === 'online') {
+      onlineSince ??= Date.now()
+      if (Date.now() - onlineSince >= 500) return
+    } else {
+      onlineSince = undefined
+      if (snapshot?.state === 'failed') throw new Error(`Tunnel failed instead of recovering: ${JSON.stringify(snapshot)}`)
+    }
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for a stable tunnel: ${JSON.stringify(snapshot)}`)
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
 }
