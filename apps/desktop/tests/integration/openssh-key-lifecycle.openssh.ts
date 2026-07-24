@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { createServer } from 'node:net'
+import { createServer, type Socket } from 'node:net'
 import pino from 'pino'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { KeyService } from '../../src/core/keys/key-service'
@@ -128,8 +128,11 @@ describe('Docker OpenSSH password-to-key lifecycle', () => {
 
     const tunnels = new TunnelService(repository, connections, pino({ enabled: false }))
     const localForwardPort = await reservePort()
+    const targetSockets = new Set<Socket>()
     const target = createServer((socket) => {
-      socket.on('error', () => undefined)
+      targetSockets.add(socket)
+      socket.once('close', () => targetSockets.delete(socket))
+      socket.on('error', () => socket.destroy())
       socket.end('HTTP/1.1 200 OK\r\nContent-Length: 17\r\nConnection: close\r\n\r\nREMOTE_FORWARD_OK')
     })
     await new Promise<void>((resolve, reject) => { target.once('error', reject); target.listen(0, '127.0.0.1', () => resolve()) })
@@ -148,6 +151,7 @@ describe('Docker OpenSSH password-to-key lifecycle', () => {
       expect((await tunnels.list(profile.host.id)).find((item) => item.profile.id === remoteTunnel.id)?.state).toBe('online')
     } finally {
       await tunnels.stopAll()
+      targetSockets.forEach((socket) => socket.destroy())
       await new Promise<void>((resolve) => target.close(() => resolve()))
     }
 
