@@ -128,7 +128,10 @@ describe('Docker OpenSSH password-to-key lifecycle', () => {
 
     const tunnels = new TunnelService(repository, connections, pino({ enabled: false }))
     const localForwardPort = await reservePort()
-    const target = createServer((socket) => socket.end('HTTP/1.1 200 OK\r\nContent-Length: 17\r\nConnection: close\r\n\r\nREMOTE_FORWARD_OK'))
+    const target = createServer((socket) => {
+      socket.on('error', () => undefined)
+      socket.end('HTTP/1.1 200 OK\r\nContent-Length: 17\r\nConnection: close\r\n\r\nREMOTE_FORWARD_OK')
+    })
     await new Promise<void>((resolve, reject) => { target.once('error', reject); target.listen(0, '127.0.0.1', () => resolve()) })
     const targetAddress = target.address()
     if (!targetAddress || typeof targetAddress === 'string') throw new Error('RemoteForward target has no TCP port')
