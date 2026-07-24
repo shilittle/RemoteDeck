@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { createHash } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
 import { connect as connectTcp, createServer } from 'node:net'
 import type { Server as NetServer, Socket } from 'node:net'
@@ -135,7 +136,7 @@ export class TunnelService extends EventEmitter {
     try { await forwardIn(client, entry.profile.bindAddress, entry.profile.sourcePort) }
     catch (error) {
       if (!entry.profile.legacyCleanupHook?.authorized) throw error
-      this.#logger.warn({ tunnelId: entry.profile.id, command: entry.profile.legacyCleanupHook.command }, 'Executing explicitly authorized legacy tunnel cleanup hook')
+      this.#logger.warn({ tunnelId: entry.profile.id, commandSha256: createHash('sha256').update(entry.profile.legacyCleanupHook.command).digest('hex') }, 'Executing explicitly authorized legacy tunnel cleanup hook')
       this.#log(entry, 'warn', 'Executing the explicitly authorized legacy cleanup hook; the command is omitted from runtime logs.')
       await execRemote(client, entry.profile.legacyCleanupHook.command)
       await forwardIn(client, entry.profile.bindAddress, entry.profile.sourcePort)

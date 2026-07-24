@@ -16,6 +16,7 @@ import { BtopService } from '../core/telemetry/btop-service'
 import { CommandService } from '../core/commands/command-service'
 import { CodexService } from '../core/commands/codex-service'
 import { LegacyMigrationService } from '../core/migration/legacy-migration-service'
+import { DiagnosticsService } from '../core/diagnostics/diagnostics-service'
 import type { ConnectionSnapshot } from '../protocol/ssh'
 import type { AppSettings } from '../protocol/settings'
 import { registerIpcHandlers } from './ipc/register-ipc'
@@ -107,7 +108,9 @@ if (!app.requestSingleInstanceLock()) {
     const logger = createAppLogger(join(app.getPath('userData'), 'logs'))
     const settings = new SettingsService(join(app.getPath('userData'), 'settings.json'))
     settings.on('updated', applyDesktopSettings)
-    void settings.get().then(applyDesktopSettings)
+    const applyLogLevel = (current: AppSettings): void => { logger.level = current.logLevel }
+    settings.on('updated', applyLogLevel)
+    void settings.get().then((current) => { applyDesktopSettings(current); applyLogLevel(current) })
     const profiles = new ProfileRepository(join(app.getPath('userData'), 'profiles.json'))
     const connections = new SshConnectionManager(profiles)
     const openSshConfig = new OpenSshConfigManager(profiles)
@@ -117,14 +120,46 @@ if (!app.requestSingleInstanceLock()) {
     const sftp = new SftpService(connections)
     const transfers = new TransferService(sftp)
     const mainLogger = categoryLogger(logger, 'main')
-    const tunnels = new TunnelService(profiles, connections, mainLogger)
+    const sshLogger = categoryLogger(logger, 'ssh')
+    const transferLogger = categoryLogger(logger, 'transfer')
+    const commandLogger = categoryLogger(logger, 'command')
+    const tunnels = new TunnelService(profiles, connections, categoryLogger(logger, 'tunnel'))
     const collectorPath = app.isPackaged ? join(process.resourcesPath, 'remote-collector', 'collector.py') : join(app.getAppPath(), '..', '..', 'packages', 'remote-collector', 'collector.py')
-    const telemetry = new TelemetryService(connections, () => settings.get(), () => readFile(collectorPath, 'utf8'), mainLogger)
-    const btop = new BtopService(connections, mainLogger)
+    const telemetry = new TelemetryService(connections, () => settings.get(), () => readFile(collectorPath, 'utf8'), categoryLogger(logger, 'telemetry'))
+    const btop = new BtopService(connections, categoryLogger(logger, 'telemetry'))
     const commands = new CommandService(profiles, connections, terminals)
     const codex = new CodexService(profiles, connections, terminals)
     const legacy = new LegacyMigrationService(profiles, hosts, settings)
+    const diagnostics = new DiagnosticsService({
+      appVersion: app.getVersion(),
+      logDirectory: join(app.getPath('userData'), 'logs'),
+      getSettings: async () => {
+        const current = await settings.get()
+        return {
+          ...current,
+          sshConfigPath: current.sshConfigPath ? '[Configured path]' : '',
+          downloadDirectory: current.downloadDirectory ? '[Configured path]' : ''
+        }
+      },
+      getProfileSummary: () => profiles.diagnosticSummary(),
+      getCapabilities: async () => {
+        const hostProfiles = await profiles.list()
+        const tunnelSnapshots = await tunnels.list()
+        return {
+          platform: process.platform,
+          arch: process.arch,
+          packaged: app.isPackaged,
+          runtime: { electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node },
+          security: { contextIsolation: true, rendererSandbox: true, nodeIntegration: false, typedIpc: true, electronFusesInPackagedBuild: true },
+          features: { ssh: true, terminal: true, sftp: true, tunnels: true, telemetry: true, commands: true, codexPty: true, legacyMigration: true },
+          connectionStates: countValues(hostProfiles.map((profile) => connections.stateFor(profile.host.id))),
+          tunnelStates: countValues(tunnelSnapshots.map((snapshot) => snapshot.state)),
+          telemetryStates: countValues(telemetry.list().map((snapshot) => snapshot.state))
+        }
+      }
+    })
     const onConnectionState = (snapshot: ConnectionSnapshot): void => {
+      sshLogger.info({ hostId: snapshot.hostId, state: snapshot.state, generation: snapshot.generation }, 'SSH connection state changed')
       if (snapshot.state === 'online') {
         telemetry.wake(snapshot.hostId)
         btop.wake(snapshot.hostId)
@@ -139,11 +174,19 @@ if (!app.requestSingleInstanceLock()) {
       }
     }
     connections.on('state', onConnectionState)
+    const onTransferAudit = (event: unknown): void => {
+      if (hasStringFields(event, ['type', 'jobId', 'state'])) transferLogger.info({ type: event.type, jobId: event.jobId, state: event.state }, 'Transfer state changed')
+    }
+    const onCommandAudit = (event: unknown): void => {
+      if (hasStringFields(event, ['type', 'jobId'])) commandLogger.info({ type: event.type, jobId: event.jobId }, 'Command job event')
+    }
+    transfers.on('event', onTransferAudit)
+    commands.on('event', onCommandAudit)
     mainWindow = createWindow()
     bindCloseToTray(mainWindow)
     tray = createTray()
-    const ipcDependencies = { ipcMain, settings, hosts, profiles, connections, keys, terminals, sftp, transfers, tunnels, telemetry, btop, commands, codex, legacy, logger: mainLogger, appVersion: app.getVersion() }
-    disposeRuntime = () => { settings.off('updated', applyDesktopSettings); connections.off('state', onConnectionState); transfers.cancelAll(); commands.cancelAll(); terminals.closeAll(); telemetry.stopAll(); btop.stopAll(); void tunnels.stopAll(); void connections.disconnectAll() }
+    const ipcDependencies = { ipcMain, settings, hosts, profiles, connections, keys, terminals, sftp, transfers, tunnels, telemetry, btop, commands, codex, legacy, diagnostics, logger: mainLogger, appVersion: app.getVersion() }
+    disposeRuntime = () => { settings.off('updated', applyDesktopSettings); settings.off('updated', applyLogLevel); connections.off('state', onConnectionState); transfers.off('event', onTransferAudit); commands.off('event', onCommandAudit); transfers.cancelAll(); commands.cancelAll(); terminals.closeAll(); telemetry.stopAll(); btop.stopAll(); void tunnels.stopAll(); void connections.disconnectAll() }
     disposeIpc = registerIpcHandlers({ ...ipcDependencies, window: mainWindow })
     mainWindow.on('closed', () => { mainWindow = null })
     app.on('activate', () => {
@@ -163,3 +206,11 @@ if (!app.requestSingleInstanceLock()) {
 
 app.on('window-all-closed', () => app.quit())
 app.on('before-quit', () => { isQuitting = true; tray?.destroy(); tray = null; disposeIpc?.(); disposeRuntime?.() })
+
+function countValues(values: string[]): Record<string, number> {
+  return values.reduce<Record<string, number>>((counts, value) => ({ ...counts, [value]: (counts[value] ?? 0) + 1 }), {})
+}
+
+function hasStringFields(value: unknown, fields: string[]): value is Record<string, string> {
+  return typeof value === 'object' && value !== null && fields.every((field) => typeof (value as Record<string, unknown>)[field] === 'string')
+}

@@ -17,5 +17,10 @@ describe('secret redaction', () => {
     expect(redacted).not.toContain('hunter2')
     expect(redacted).not.toContain('OPENSSH PRIVATE KEY')
   })
-})
 
+  it('redacts JSON fields, URL credentials, OpenAI tokens, and passphrases', () => {
+    const text = '{"token":"sk-proj-abcdefgh12345678","authorization":"Basic dXNlcjpwYXNz"}\nssh://developer:hunter2@example.test passphrase: swordfish sess-abcdefgh12345678'
+    const redacted = redactText(text)
+    for (const secret of ['sk-proj-abcdefgh12345678', 'Basic dXNlcjpwYXNz', 'hunter2', 'swordfish', 'sess-abcdefgh12345678']) expect(redacted).not.toContain(secret)
+  })
+})

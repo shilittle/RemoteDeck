@@ -197,6 +197,47 @@ export class ProfileRepository {
     return [...new Set((await this.#store.load()).imports.flatMap((item) => item.legacyRiskRules))]
   }
 
+  async diagnosticSummary(): Promise<unknown> {
+    const data = await this.#store.load()
+    return {
+      schemaVersion: data.schemaVersion,
+      counts: {
+        hosts: data.hosts.length,
+        workspaces: data.workspaces.length,
+        knownHostKeys: data.hostKeys.length,
+        tunnels: data.tunnels.length,
+        commands: data.commands.length,
+        privateKeyMetadata: data.privateKeys.length,
+        legacyImports: data.imports.length
+      },
+      hosts: data.hosts.map((host, index) => {
+        const auth = data.authProfiles.find((item) => item.id === host.authProfileId)
+        return {
+          hostIndex: index + 1,
+          authMethod: auth?.method ?? 'missing',
+          hasJumpHost: Boolean(host.jumpHostId),
+          hasWorkspace: Boolean(host.defaultWorkspaceId),
+          monitorEnabled: host.monitorEnabled,
+          groupCount: host.groups.length,
+          advanced: host.advanced
+        }
+      }),
+      tunnels: data.tunnels.map((tunnel) => ({
+        direction: tunnel.direction,
+        autoStart: tunnel.autoStart,
+        healthKind: tunnel.healthCheck?.type ?? 'none',
+        legacyCleanupPresent: Boolean(tunnel.legacyCleanupHook),
+        legacyCleanupAuthorized: tunnel.legacyCleanupHook?.authorized ?? false
+      })),
+      commands: data.commands.map((command) => ({
+        scope: command.hostId ? 'host' : 'global',
+        risk: command.risk,
+        requiresPty: command.requiresPty,
+        requiresSudo: command.requiresSudo
+      }))
+    }
+  }
+
   async addTunnel(input: Omit<TunnelProfile, 'schemaVersion' | 'id' | 'createdAt' | 'updatedAt'>): Promise<TunnelProfile> {
     const now = new Date().toISOString()
     const tunnel = tunnelProfileSchema.parse({ schemaVersion: 1, id: randomUUID(), ...input, createdAt: now, updatedAt: now })

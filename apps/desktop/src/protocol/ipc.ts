@@ -82,6 +82,7 @@ import {
   commandRunRequestSchema
 } from './command'
 import { legacyMigrationApplySchema, legacyMigrationPreviewSchema, legacyMigrationResultSchema } from './migration'
+import { diagnosticsExportResultSchema } from './diagnostics'
 
 export const IPC_CHANNELS = {
   bootstrap: 'v1:app.bootstrap',
@@ -90,6 +91,7 @@ export const IPC_CHANNELS = {
   appClipboardWrite: 'v1:app.clipboardWrite',
   settingsGet: 'v1:settings.get',
   settingsUpdate: 'v1:settings.update',
+  diagnosticsExport: 'v1:diagnostics.export',
   hostsList: 'v1:hosts.list',
   hostsCreate: 'v1:hosts.create',
   hostsUpdate: 'v1:hosts.update',
@@ -180,6 +182,7 @@ export const ipcContracts = {
   appClipboardWrite: { channel: IPC_CHANNELS.appClipboardWrite, input: z.object({ text: clipboardTextSchema }).strict(), output: z.object({ written: z.literal(true) }) },
   settingsGet: { channel: IPC_CHANNELS.settingsGet, input: emptyRequestSchema, output: appSettingsSchema },
   settingsUpdate: { channel: IPC_CHANNELS.settingsUpdate, input: appSettingsPatchSchema, output: appSettingsSchema },
+  diagnosticsExport: { channel: IPC_CHANNELS.diagnosticsExport, input: emptyRequestSchema, output: diagnosticsExportResultSchema },
   hostsList: { channel: IPC_CHANNELS.hostsList, input: emptyRequestSchema, output: z.array(hostListItemSchema) },
   hostsCreate: { channel: IPC_CHANNELS.hostsCreate, input: hostCreateRequestSchema, output: hostListItemSchema },
   hostsUpdate: { channel: IPC_CHANNELS.hostsUpdate, input: hostUpdateRequestSchema, output: hostListItemSchema },
@@ -257,6 +260,9 @@ export interface RemoteDeckApi {
   settings: {
     get(): Promise<z.infer<typeof appSettingsSchema>>
     update(patch: z.infer<typeof appSettingsPatchSchema>): Promise<z.infer<typeof appSettingsSchema>>
+  }
+  diagnostics: {
+    export(): Promise<z.infer<typeof diagnosticsExportResultSchema>>
   }
   hosts: {
     list(): Promise<z.infer<typeof ipcContracts.hostsList.output>>

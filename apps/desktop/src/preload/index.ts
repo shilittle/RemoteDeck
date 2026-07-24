@@ -32,6 +32,9 @@ const api: RemoteDeckApi = Object.freeze({
     get: () => invoke(ipcContracts.settingsGet, {}),
     update: (patch: AppSettingsPatch) => invoke(ipcContracts.settingsUpdate, patch)
   }),
+  diagnostics: Object.freeze({
+    export: () => invoke(ipcContracts.diagnosticsExport, {})
+  }),
   hosts: Object.freeze({
     list: () => invoke(ipcContracts.hostsList, {}),
     create: (request: HostCreateRequest) => invoke(ipcContracts.hostsCreate, request),

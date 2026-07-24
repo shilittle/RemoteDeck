@@ -63,3 +63,38 @@ jobs:
           REMOTEDECK_REMOTE_FORWARD_PORT: 17890
       - if: always()
         run: docker stop remotedeck-openssh || true
+
+  windows-release-candidate:
+    name: Windows E2E and release artifacts
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:e2e
+      - run: pnpm dist:win
+      - name: Portable launch smoke
+        shell: pwsh
+        run: |
+          $portable = Get-ChildItem -LiteralPath apps/desktop/release -Filter '*portable.exe' | Select-Object -First 1
+          if ($null -eq $portable) { throw 'Portable artifact not found.' }
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./tests/manual/m9-packaged-smoke.ps1 -PortablePath $portable.FullName
+      - name: Clean NSIS install smoke
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -LiteralPath apps/desktop/release -Filter '*setup.exe' | Select-Object -First 1
+          if ($null -eq $installer) { throw 'NSIS artifact not found.' }
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./tests/manual/m9-clean-install.ps1 -InstallerPath $installer.FullName
+      - uses: actions/upload-artifact@v6
+        with:
+          name: RemoteDeck-1.0.0-windows-x64
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.blockmap
+          if-no-files-found: error

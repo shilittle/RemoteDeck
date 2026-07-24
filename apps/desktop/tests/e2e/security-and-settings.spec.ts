@@ -26,7 +26,7 @@ test('renderer is sandboxed and settings round-trip through validated IPC', asyn
         nodeGlobalPresent: 'process' in globalThis,
         apiKeys: Object.keys((globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck).sort()
       }))
-      expect(boundary).toEqual({ nodeGlobalPresent: false, apiKeys: ['app', 'codex', 'commands', 'hostKeys', 'hosts', 'keys', 'legacy', 'settings', 'sftp', 'telemetry', 'terminals', 'tunnels'] })
+      expect(boundary).toEqual({ nodeGlobalPresent: false, apiKeys: ['app', 'codex', 'commands', 'diagnostics', 'hostKeys', 'hosts', 'keys', 'legacy', 'settings', 'sftp', 'telemetry', 'terminals', 'tunnels'] })
       await firstWindow.evaluate(() => (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck.settings.update({ terminalFontSize: 17 }))
       const sshConfigPath = join(userData, '.ssh', 'config')
       await firstWindow.evaluate((configPath) => (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck.settings.update({ sshConfigPath: configPath }), sshConfigPath)

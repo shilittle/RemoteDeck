@@ -18,7 +18,7 @@ The read-only Windows detector correlates listening loopback ports with process 
 After the user explicitly selects a candidate, the LabPulse helper creates a draft equivalent to:
 
 ```text
-RemoteForward 127.0.0.1:17890 -> 127.0.0.1:<selected Clash port>
+RemoteForward 127.0.0.1:<remote-port> -> 127.0.0.1:<selected Clash port>
 ```
 
 The user must still review and save the draft. Multiple detected candidates remain a manual choice.

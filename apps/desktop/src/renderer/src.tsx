@@ -1,7 +1,7 @@
 import { Component, StrictMode, useEffect, useState } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ChartNoAxesCombined, CircleAlert, Command, Files, HardDrive, Save, Server, Settings, TerminalSquare } from 'lucide-react'
+import { ChartNoAxesCombined, CircleAlert, Command, FileArchive, Files, HardDrive, Save, Server, Settings, TerminalSquare } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AppSettingsPatch } from '../protocol/settings'
 import { type Activity, useAppStore } from './store'
@@ -110,11 +110,25 @@ function SettingsPanel(): React.JSX.Element {
   const saving = useAppStore((state) => state.saving)
   const updateSettings = useAppStore((state) => state.updateSettings)
   const [draft, setDraft] = useState<AppSettingsPatch>({})
+  const [diagnosticsBusy, setDiagnosticsBusy] = useState(false)
+  const [diagnosticsMessage, setDiagnosticsMessage] = useState('')
   if (!settings) return <StateScreen title="设置不可用" detail="本地设置尚未成功加载。" />
   const value = { ...settings, ...draft }
+  const exportDiagnostics = async (): Promise<void> => {
+    setDiagnosticsBusy(true)
+    setDiagnosticsMessage('')
+    try {
+      const result = await window.remoteDeck.diagnostics.export()
+      setDiagnosticsMessage(result.exported ? `已导出 ${String(result.entries)} 项，SHA-256 ${result.sha256 ?? ''}\n${result.path ?? ''}` : '已取消导出。')
+    } catch (error) {
+      setDiagnosticsMessage(error instanceof Error ? error.message : '诊断包导出失败。')
+    } finally {
+      setDiagnosticsBusy(false)
+    }
+  }
   return (
     <section className="settings-panel">
-      <div className="panel-heading"><div><h1>设置</h1><p>这些选项会原子写入本地版本化配置。</p></div><button className="primary" disabled={saving || Object.keys(draft).length === 0} onClick={() => { void updateSettings(draft); setDraft({}) }}><Save size={16} />{saving ? '保存中…' : '保存'}</button></div>
+      <div className="panel-heading"><div><h1>设置</h1><p>这些选项会原子写入本地版本化配置。</p></div><div className="button-row"><button disabled={diagnosticsBusy} onClick={() => { void exportDiagnostics() }}><FileArchive size={16} />{diagnosticsBusy ? '导出中…' : '导出诊断包'}</button><button className="primary" disabled={saving || Object.keys(draft).length === 0} onClick={() => { void updateSettings(draft); setDraft({}) }}><Save size={16} />{saving ? '保存中…' : '保存'}</button></div></div>
       <div className="settings-grid">
         <label><span>终端字体</span><input value={value.terminalFontFamily} onChange={(event) => setDraft({ ...draft, terminalFontFamily: event.target.value })} /></label>
         <label><span>终端字号</span><input type="number" min="9" max="32" value={value.terminalFontSize} onChange={(event) => setDraft({ ...draft, terminalFontSize: Number(event.target.value) })} /></label>
@@ -127,6 +141,7 @@ function SettingsPanel(): React.JSX.Element {
         <label className="toggle"><input type="checkbox" checked={value.btopWatchdogEnabled} onChange={(event) => setDraft({ ...draft, btopWatchdogEnabled: event.target.checked })} /><span>默认启用 btop watchdog</span></label>
         <label><span>btop 轮换（分钟）</span><input type="number" min="1" max="1440" value={value.btopRotationMinutes} onChange={(event) => setDraft({ ...draft, btopRotationMinutes: Number(event.target.value) })} /></label>
       </div>
+      {diagnosticsMessage && <p className="diagnostics-result" role="status">{diagnosticsMessage}</p>}
       <LegacyMigrationPanel />
     </section>
   )

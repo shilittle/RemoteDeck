@@ -2,6 +2,10 @@
   "name": "@remotedeck/desktop",
   "version": "1.0.0",
   "private": true,
+  "description": "A secure Windows SSH workspace for Linux remote-development workflows",
+  "author": "RemoteDeck contributors",
+  "license": "MIT",
+  "homepage": "https://github.com/shilittle/RemoteDeck",
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
@@ -13,7 +17,8 @@
     "test:integration:openssh": "vitest run --config vitest.openssh.config.ts",
     "test:e2e": "pnpm build && playwright test",
     "build": "electron-vite build",
-    "dist:win": "pnpm build && electron-builder --win nsis portable --x64"
+    "generate:assets": "node scripts/generate-icons.mjs",
+    "dist:win": "pnpm generate:assets && pnpm build && electron-builder --win nsis portable --x64"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.10.0",

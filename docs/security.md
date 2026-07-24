@@ -16,7 +16,7 @@ Every SSH handshake uses an explicit host verifier. Unknown keys stop before aut
 
 Owned resource cleanup, command confirmation, transfer temporary files, diagnostics, and Codex credential boundaries follow the invariants in `AGENTS.md`.
 
-Pino writes structured category logs below `userData/logs`. The log hook recursively redacts secret-named fields plus inline passwords, passphrases, tokens, authorization bearer values, API keys, and private-key blocks. Terminal input and output are not application logs.
+Pino writes structured category logs below `userData/logs`; launch-segmented rotation retains at most 20 owned files. The log hook recursively redacts secret-named fields plus inline/JSON passwords, passphrases, tokens, authorization values, URL credentials, API keys, OpenAI-style tokens, and private-key blocks. Terminal input and output are not application logs. Diagnostics adds a second scan after redaction and before ZIP creation.
 
 Interactive terminal bytes cross only the fixed terminal IPC contracts and are not persisted, replayed, or included in diagnostics. Clipboard access is limited to bounded text read/write operations. Terminal links accept only validated HTTP(S) URLs before the main process delegates to the operating system; `file:`, executable, and custom schemes are rejected.
 

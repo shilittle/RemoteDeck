@@ -18,6 +18,7 @@ import type { BtopService } from '../../core/telemetry/btop-service'
 import type { CommandService } from '../../core/commands/command-service'
 import type { CodexService } from '../../core/commands/codex-service'
 import type { LegacyMigrationService } from '../../core/migration/legacy-migration-service'
+import type { DiagnosticsService } from '../../core/diagnostics/diagnostics-service'
 import { IPC_CHANNELS } from '../../protocol/ipc'
 
 interface IpcDependencies {
@@ -37,12 +38,13 @@ interface IpcDependencies {
   commands: CommandService
   codex: CodexService
   legacy: LegacyMigrationService
+  diagnostics: DiagnosticsService
   logger: Logger
   appVersion: string
 }
 
 export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
-  const { ipcMain, window, settings, hosts, profiles, connections, keys, terminals, sftp, transfers, tunnels, telemetry, btop, commands, codex, legacy, logger, appVersion } = dependencies
+  const { ipcMain, window, settings, hosts, profiles, connections, keys, terminals, sftp, transfers, tunnels, telemetry, btop, commands, codex, legacy, diagnostics, logger, appVersion } = dependencies
   const channels: string[] = []
 
   register(ipcContracts.bootstrap, async () => ({
@@ -56,6 +58,15 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
   register(ipcContracts.appClipboardWrite, (request) => { clipboard.writeText(request.text); return { written: true as const } })
   register(ipcContracts.settingsGet, () => settings.get())
   register(ipcContracts.settingsUpdate, (patch) => settings.update(patch))
+  register(ipcContracts.diagnosticsExport, async () => {
+    const selection = await dialog.showSaveDialog(window, {
+      title: '导出 RemoteDeck 诊断包',
+      defaultPath: `RemoteDeck-diagnostics-${new Date().toISOString().slice(0, 10)}.zip`,
+      filters: [{ name: 'ZIP archive', extensions: ['zip'] }]
+    })
+    if (selection.canceled || !selection.filePath) return { exported: false, path: null, bytes: 0, sha256: null, entries: 0 }
+    return diagnostics.exportTo(selection.filePath)
+  })
   register(ipcContracts.hostsList, () => hosts.list())
   register(ipcContracts.hostsCreate, (request) => hosts.create(request))
   register(ipcContracts.hostsUpdate, async (request) => {
