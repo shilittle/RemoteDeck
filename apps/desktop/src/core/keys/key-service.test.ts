@@ -3,12 +3,24 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ProfileRepository } from '../hosts/profile-repository'
+import { generateUsableEd25519KeyPair } from './ed25519-key-pair'
 import { KeyService } from './key-service'
 
 const directories: string[] = []
 afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))))
 
 describe('Ed25519 key generation', () => {
+  it('rejects malformed ssh2 output and retries before returning a pair', () => {
+    const valid = generateUsableEd25519KeyPair({ comment: 'valid fixture' })
+    let attempts = 0
+    const recovered = generateUsableEd25519KeyPair({ comment: 'retry fixture' }, () => {
+      attempts += 1
+      return attempts === 1 ? { private: 'malformed', public: 'malformed' } : valid
+    })
+    expect(attempts).toBe(2)
+    expect(recovered).toEqual(valid)
+  })
+
   it('writes an encrypted OpenSSH key pair and refuses overwrite', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'remotedeck-key-'))
     directories.push(directory)

@@ -3,12 +3,13 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test } from '@playwright/test'
 import type { ElectronApplication } from '@playwright/test'
+import { generateUsableEd25519KeyPair } from '../../src/core/keys/ed25519-key-pair'
 import type { RemoteDeckApi } from '../../src/protocol/ipc'
 import ssh2 from 'ssh2'
 import type { Connection, Server as SshServer } from 'ssh2'
 
-const { Server, utils } = ssh2
-let server: SshServer
+const { Server } = ssh2
+let server: SshServer | undefined
 let port = 0
 let resizeEvents = 0
 let shellCount = 0
@@ -16,11 +17,12 @@ const serverEvents: string[] = []
 const connections = new Set<Connection>()
 
 test.beforeAll(async () => {
-  server = new Server({ hostKeys: [utils.generateKeyPairSync('ed25519').private] }, configureClient)
+  const createdServer = new Server({ hostKeys: [generateUsableEd25519KeyPair({ comment: 'terminal e2e' }).private] }, configureClient)
+  server = createdServer
   port = await new Promise<number>((resolvePort, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
+    createdServer.once('error', reject)
+    createdServer.listen(0, '127.0.0.1', () => {
+      const address = createdServer.address()
       if (!address || typeof address === 'string') reject(new Error('SSH E2E server did not expose a port'))
       else resolvePort(address.port)
     })
@@ -29,7 +31,8 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   for (const connection of connections) connection.end()
-  await new Promise<void>((resolveClose) => server.close(() => resolveClose()))
+  const activeServer = server
+  if (activeServer) await new Promise<void>((resolveClose) => activeServer.close(() => resolveClose()))
 })
 
 test('real xterm PTY supports tabs, Unicode, Ctrl+C, search, resize, rename, and new-shell reconnect', async () => {

@@ -1,25 +1,27 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Server, utils } from 'ssh2'
+import { Server } from 'ssh2'
 import type { Connection } from 'ssh2'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { ProfileRepository } from '../../src/core/hosts/profile-repository'
+import { generateUsableEd25519KeyPair } from '../../src/core/keys/ed25519-key-pair'
 import { SshConnectionManager } from '../../src/core/ssh/connection-manager'
 
 let directory = ''
-let server: Server
+let server: Server | undefined
 let port = 0
 const connections = new Set<Connection>()
 
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), 'remotedeck-ssh-integration-'))
-  const keyPair = utils.generateKeyPairSync('ed25519', { comment: 'integration' })
-  server = new Server({ hostKeys: [keyPair.private] }, (client) => configureClient(client))
+  const keyPair = generateUsableEd25519KeyPair({ comment: 'integration' })
+  const createdServer = new Server({ hostKeys: [keyPair.private] }, (client) => configureClient(client))
+  server = createdServer
   await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
+    createdServer.once('error', reject)
+    createdServer.listen(0, '127.0.0.1', () => {
+      const address = createdServer.address()
       if (!address || typeof address === 'string') { reject(new Error('SSH test server did not expose a TCP port')); return }
       port = address.port
       resolve()
@@ -29,7 +31,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   for (const connection of connections) connection.end()
-  await new Promise<void>((resolve) => server.close(() => resolve()))
+  const activeServer = server
+  if (activeServer) await new Promise<void>((resolve) => activeServer.close(() => resolve()))
   await rm(directory, { recursive: true, force: true })
 })
 

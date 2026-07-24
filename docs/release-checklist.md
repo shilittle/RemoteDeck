@@ -3,7 +3,7 @@
 ## Automated candidate gates
 
 - [x] M0–M9 completed in order with independent commits and green milestone gates.
-- [x] `pnpm verify` green on final tree: 52 unit and 4 integration tests.
+- [x] `pnpm verify` green on final tree: 53 unit and 4 integration tests.
 - [x] `pnpm test:e2e` green on final production renderer build: 2/2.
 - [x] `pnpm audit --audit-level high`: no known vulnerabilities.
 - [x] final `pnpm dist:win` produces x64 NSIS and portable artifacts.
@@ -29,4 +29,4 @@ Real secrets, private-key passphrases, Codex account approval and code-signing c
 - [x] Draft PR opened; CI observed and failures fixed.
 - [x] Do not merge the PR and do not publish a formal Release automatically.
 
-Final required-check evidence: [GitHub Actions run 30112478748](https://github.com/shilittle/RemoteDeck/actions/runs/30112478748) passed Ubuntu/Windows quality, two-container Docker OpenSSH direct/ProxyJump acceptance, Electron E2E, NSIS/portable packaging, both packaged launch smokes and artifact upload. Draft PR [#1](https://github.com/shilittle/RemoteDeck/pull/1) remains open and unmerged.
+Final required-check evidence is the green check rollup on Draft PR [#1](https://github.com/shilittle/RemoteDeck/pull/1): Ubuntu/Windows quality, two-container Docker OpenSSH direct/ProxyJump acceptance, Electron E2E, NSIS/portable packaging, both packaged launch smokes and artifact upload. The PR remains open and unmerged.

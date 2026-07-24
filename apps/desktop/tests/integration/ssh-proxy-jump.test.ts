@@ -2,30 +2,31 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { connect as connectTcp } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Server, utils } from 'ssh2'
+import { Server } from 'ssh2'
 import type { Connection } from 'ssh2'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { ProfileRepository } from '../../src/core/hosts/profile-repository'
+import { generateUsableEd25519KeyPair } from '../../src/core/keys/ed25519-key-pair'
 import { SshConnectionManager } from '../../src/core/ssh/connection-manager'
 
 let directory = ''
-let jumpServer: Server
-let targetServer: Server
+let jumpServer: Server | undefined
+let targetServer: Server | undefined
 let jumpPort = 0
 let targetPort = 0
 const serverConnections = new Set<Connection>()
 
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), 'remotedeck-jump-integration-'))
-  jumpServer = new Server({ hostKeys: [utils.generateKeyPairSync('ed25519').private] }, configureJump)
-  targetServer = new Server({ hostKeys: [utils.generateKeyPairSync('ed25519').private] }, configureTarget)
+  jumpServer = new Server({ hostKeys: [generateUsableEd25519KeyPair({ comment: 'jump integration' }).private] }, configureJump)
+  targetServer = new Server({ hostKeys: [generateUsableEd25519KeyPair({ comment: 'target integration' }).private] }, configureTarget)
   jumpPort = await listen(jumpServer)
   targetPort = await listen(targetServer)
 })
 
 afterAll(async () => {
   for (const connection of serverConnections) connection.end()
-  await Promise.all([close(jumpServer), close(targetServer)])
+  await Promise.all([jumpServer ? close(jumpServer) : Promise.resolve(), targetServer ? close(targetServer) : Promise.resolve()])
   await rm(directory, { recursive: true, force: true })
 })
 

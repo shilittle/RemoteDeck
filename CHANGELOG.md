@@ -15,6 +15,7 @@
 
 - Sandboxed/context-isolated renderer, fixed typed IPC, restrictive CSP, deny-by-default navigation/permissions, ASAR integrity and disabled runtime escape fuses.
 - Host-key hard failure, memory-only credentials, owned-resource cleanup, conservative command classification, process identity revalidation and recursive secret redaction.
+- Generated Ed25519 keys are validated as a matching parseable pair before they are written, with bounded regeneration and owned-file rollback.
 
 ### Compatibility
 

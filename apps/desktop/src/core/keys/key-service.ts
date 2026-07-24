@@ -11,6 +11,7 @@ import type { ProfileRepository } from '../hosts/profile-repository'
 import type { SshConnectionManager } from '../ssh/connection-manager'
 import { inspectHostKey } from '../ssh/host-key'
 import { mergeAuthorizedKey } from './authorized-keys'
+import { generateUsableEd25519KeyPair } from './ed25519-key-pair'
 
 const execFileAsync = promisify(execFile)
 
@@ -82,27 +83,29 @@ export class KeyService {
 
   async generate(request: KeyGenerateRequest): Promise<{ privateKeyPath: string; publicKeyPath: string; fingerprint: string; aclRestricted: boolean }> {
     const privateKeyPath = expandUserPath(request.privateKeyPath)
-    const options = request.passphrase
-      ? { comment: request.comment, passphrase: request.passphrase, cipher: 'aes256-ctr' as const, rounds: 16 }
-      : { comment: request.comment }
-    const pair = ssh2.utils.generateKeyPairSync('ed25519', options)
     const publicKeyPath = `${privateKeyPath}.pub`
     let privateCreated = false
+    let publicCreated = false
     try {
+      const pair = generateUsableEd25519KeyPair(request.passphrase
+        ? { comment: request.comment, passphrase: request.passphrase, cipher: 'aes256-ctr', rounds: 16 }
+        : { comment: request.comment })
       await mkdir(dirname(privateKeyPath), { recursive: true })
       await writeExclusive(privateKeyPath, pair.private, 0o600)
       privateCreated = true
       await writeExclusive(publicKeyPath, `${pair.public.trim()}\n`, 0o644)
+      publicCreated = true
+      const aclRestricted = await restrictPrivateKey(privateKeyPath)
+      const publicBlob = publicKeyBlob(pair.public)
+      await this.scan([privateKeyPath])
+      return { privateKeyPath, publicKeyPath, fingerprint: inspectHostKey(publicBlob).sha256Fingerprint, aclRestricted }
     } catch (error) {
+      if (publicCreated) await rm(publicKeyPath, { force: true })
       if (privateCreated) await rm(privateKeyPath, { force: true })
       throw error
     } finally {
       if (request.passphrase) request.passphrase = ''
     }
-    const aclRestricted = await restrictPrivateKey(privateKeyPath)
-    const publicBlob = publicKeyBlob(pair.public)
-    await this.scan([privateKeyPath])
-    return { privateKeyPath, publicKeyPath, fingerprint: inspectHostKey(publicBlob).sha256Fingerprint, aclRestricted }
   }
 
   async deploy(request: KeyDeployRequest): Promise<{ success: boolean; fingerprint: string; alreadyPresent: boolean; verified: boolean; message: string }> {
