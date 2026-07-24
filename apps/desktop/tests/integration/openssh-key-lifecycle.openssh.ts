@@ -20,14 +20,43 @@ import { CodexService } from '../../src/core/commands/codex-service'
 
 const host = process.env['REMOTEDECK_OPENSSH_HOST']
 const port = Number(process.env['REMOTEDECK_OPENSSH_PORT'])
+const proxyJumpTargetHost = process.env['REMOTEDECK_OPENSSH_TARGET_HOST']
+const proxyJumpTargetPort = Number(process.env['REMOTEDECK_OPENSSH_TARGET_PORT'] ?? 22)
 const remoteForwardPort = Number(process.env['REMOTEDECK_REMOTE_FORWARD_PORT'] ?? 17890)
-if (!host || !Number.isInteger(port) || port <= 0) throw new Error('Docker OpenSSH endpoint environment is required')
+if (!host || !Number.isInteger(port) || port <= 0 || !proxyJumpTargetHost || !Number.isInteger(proxyJumpTargetPort) || proxyJumpTargetPort <= 0) throw new Error('Docker OpenSSH direct and ProxyJump endpoint environment is required')
 
 let directory = ''
 beforeAll(async () => { directory = await mkdtemp(join(tmpdir(), 'remotedeck-openssh-')) })
 afterAll(async () => rm(directory, { recursive: true, force: true }))
 
 describe('Docker OpenSSH password-to-key lifecycle', () => {
+  it('verifies both real servers and reaches the target through ProxyJump', async () => {
+    const repository = new ProfileRepository(join(directory, 'proxyjump-profiles.json'))
+    const advanced = { connectTimeoutSeconds: 10, serverAliveIntervalSeconds: 30, serverAliveCountMax: 3, tcpKeepAlive: true, compression: false, identitiesOnly: false }
+    const jump = await repository.create({ alias: 'docker-bastion', hostname: host, port, username: 'remotedeck', groups: ['integration'], auth: { name: 'bastion password', method: 'password' }, advanced })
+    const target = await repository.create({ alias: 'docker-target', hostname: proxyJumpTargetHost, port: proxyJumpTargetPort, username: 'remotedeck', groups: ['integration'], jumpHostId: jump.host.id, workspacePath: '/home/remotedeck', auth: { name: 'target password', method: 'password' }, advanced })
+    const manager = new SshConnectionManager(repository)
+    const credentials = (): { password: string; jump: { password: string } } => ({ password: 'remotedeck-test-only', jump: { password: 'remotedeck-test-only' } })
+    try {
+      const first = await manager.connect(target.host.id, credentials())
+      expect(first.hostKeyCandidate).toMatchObject({ hostId: jump.host.id, mismatch: false })
+      if (!first.hostKeyCandidate) throw new Error('Docker bastion did not provide a host-key candidate')
+      await manager.acceptCandidate(first.hostKeyCandidate.id)
+
+      const second = await manager.connect(target.host.id, credentials())
+      expect(second.hostKeyCandidate).toMatchObject({ hostId: target.host.id, mismatch: false })
+      if (!second.hostKeyCandidate) throw new Error('Docker target did not provide a host-key candidate')
+      await manager.acceptCandidate(second.hostKeyCandidate.id)
+
+      const connected = await manager.connect(target.host.id, credentials())
+      expect(connected).toMatchObject({ state: 'online', capabilities: { shell: true, sftp: true, python3: true, writableWorkspace: true } })
+      expect(await repository.listHostKeys()).toHaveLength(2)
+      expect(await execute(manager.getOnlineClient(target.host.id), "printf 'PROXYJUMP_OK'")).toMatchObject({ code: 0, stdout: 'PROXYJUMP_OK' })
+    } finally {
+      await manager.disconnectAll()
+    }
+  })
+
   it('accepts the first fingerprint, deploys Ed25519, and reconnects with the key', async () => {
     const repository = new ProfileRepository(join(directory, 'profiles.json'))
     const profile = await repository.create({ alias: 'docker-openssh', hostname: host, port, username: 'remotedeck', groups: ['integration'], workspacePath: '/home/remotedeck', auth: { name: 'password', method: 'password' }, advanced: { connectTimeoutSeconds: 10, serverAliveIntervalSeconds: 30, serverAliveCountMax: 3, tcpKeepAlive: true, compression: false, identitiesOnly: false } })
