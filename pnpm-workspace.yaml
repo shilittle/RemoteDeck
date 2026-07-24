@@ -2,7 +2,13 @@ packages:
   - apps/*
   - packages/*
 
+allowBuilds:
+  cpu-features: set this to true or false
+  ssh2: set this to true or false
+
 onlyBuiltDependencies:
   - electron
   - electron-winstaller
   - esbuild
+  - cpu-features
+  - ssh2

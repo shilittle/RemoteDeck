@@ -32,3 +32,34 @@ jobs:
       - run: pnpm test:integration
       - run: pnpm build
 
+  openssh-integration:
+    name: Docker OpenSSH integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: docker build -t remotedeck-openssh tests/fixtures/openssh
+      - run: docker run --rm -d --name remotedeck-openssh -p 127.0.0.1:22222:22 remotedeck-openssh
+      - name: Wait for OpenSSH
+        shell: bash
+        run: |
+          for attempt in {1..30}; do
+            if bash -c '</dev/tcp/127.0.0.1/22222' 2>/dev/null; then exit 0; fi
+            sleep 1
+          done
+          docker logs remotedeck-openssh
+          exit 1
+      - run: pnpm --filter @remotedeck/desktop test:integration:openssh
+        env:
+          REMOTEDECK_OPENSSH_HOST: 127.0.0.1
+          REMOTEDECK_OPENSSH_PORT: 22222
+      - if: always()
+        run: docker stop remotedeck-openssh || true
+

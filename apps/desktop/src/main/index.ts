@@ -1,6 +1,11 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, session } from 'electron'
 import { SettingsService } from '../core/settings-service'
+import { HostService } from '../core/hosts/host-service'
+import { ProfileRepository } from '../core/hosts/profile-repository'
+import { OpenSshConfigManager } from '../core/ssh-config/open-ssh-config'
+import { SshConnectionManager } from '../core/ssh/connection-manager'
+import { KeyService } from '../core/keys/key-service'
 import { registerIpcHandlers } from './ipc/register-ipc'
 import { categoryLogger, createAppLogger } from './logging/logger'
 import { hardenWindow, installSessionSecurity, secureWindowOptions } from './security/window-security'
@@ -39,14 +44,20 @@ if (!app.requestSingleInstanceLock()) {
     installSessionSecurity(session.defaultSession, development)
     const logger = createAppLogger(join(app.getPath('userData'), 'logs'))
     const settings = new SettingsService(join(app.getPath('userData'), 'settings.json'))
+    const profiles = new ProfileRepository(join(app.getPath('userData'), 'profiles.json'))
+    const connections = new SshConnectionManager(profiles)
+    const openSshConfig = new OpenSshConfigManager(profiles)
+    const hosts = new HostService(profiles, connections, openSshConfig, settings)
+    const keys = new KeyService(connections, profiles, () => hosts.syncManagedConfig())
     mainWindow = createWindow()
-    disposeIpc = registerIpcHandlers({ ipcMain, window: mainWindow, settings, logger: categoryLogger(logger, 'main'), appVersion: app.getVersion() })
+    const ipcDependencies = { ipcMain, settings, hosts, profiles, connections, keys, logger: categoryLogger(logger, 'main'), appVersion: app.getVersion() }
+    disposeIpc = registerIpcHandlers({ ...ipcDependencies, window: mainWindow })
     mainWindow.on('closed', () => { mainWindow = null })
     app.on('activate', () => {
       if (!mainWindow) {
         mainWindow = createWindow()
         disposeIpc?.()
-        disposeIpc = registerIpcHandlers({ ipcMain, window: mainWindow, settings, logger: categoryLogger(logger, 'main'), appVersion: app.getVersion() })
+        disposeIpc = registerIpcHandlers({ ...ipcDependencies, window: mainWindow })
       }
     })
     logger.info({ development }, 'RemoteDeck started')

@@ -33,7 +33,7 @@ export const authProfileSchema = z.object({
   schemaVersion: z.literal(1),
   id: entityIdSchema,
   name: nonEmptyTextSchema,
-  method: z.enum(['password', 'private_key', 'agent']),
+  method: z.enum(['password', 'keyboard_interactive', 'private_key', 'agent']),
   identityFile: z.string().max(32_767).optional(),
   agent: z.enum(['windows_openssh', 'pageant']).optional(),
   createdAt: timestampSchema,

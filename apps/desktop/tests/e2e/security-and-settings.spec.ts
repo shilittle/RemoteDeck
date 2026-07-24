@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test } from '@playwright/test'
@@ -25,10 +25,19 @@ test('renderer is sandboxed and settings round-trip through validated IPC', asyn
         nodeGlobalPresent: 'process' in globalThis,
         apiKeys: Object.keys((globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck).sort()
       }))
-      expect(boundary).toEqual({ nodeGlobalPresent: false, apiKeys: ['app', 'settings'] })
+      expect(boundary).toEqual({ nodeGlobalPresent: false, apiKeys: ['app', 'hostKeys', 'hosts', 'keys', 'settings'] })
       await firstWindow.evaluate(() => (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck.settings.update({ terminalFontSize: 17 }))
+      const sshConfigPath = join(userData, '.ssh', 'config')
+      await firstWindow.evaluate((configPath) => (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck.settings.update({ sshConfigPath: configPath }), sshConfigPath)
       const snapshot = await firstWindow.evaluate(() => (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck.app.bootstrap())
       expect(snapshot.settings.terminalFontSize).toBe(17)
+      await firstWindow.getByLabel('别名').fill('e2e-host')
+      await firstWindow.getByLabel('地址').fill('127.0.0.1')
+      await firstWindow.getByLabel('用户名').fill('developer')
+      await firstWindow.getByRole('button', { name: '保存主机' }).click()
+      await expect(firstWindow.getByRole('heading', { name: 'e2e-host' })).toBeVisible()
+      expect(await readFile(sshConfigPath, 'utf8')).toContain('Include')
+      expect(await readFile(join(userData, '.ssh', 'remotedeck.conf'), 'utf8')).toContain('Host e2e-host')
     })
   } finally {
     if (application) await test.step('close Electron', () => application?.close())

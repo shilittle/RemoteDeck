@@ -4,6 +4,8 @@ import { Command, Files, HardDrive, MonitorCog, Save, Server, Settings, Terminal
 import type { LucideIcon } from 'lucide-react'
 import type { AppSettingsPatch } from '../protocol/settings'
 import { type Activity, useAppStore } from './store'
+import { useHostStore } from './host-store'
+import { HostPanel } from './features/hosts/HostPanel'
 import './styles.css'
 
 const activities: Array<{ id: Activity; label: string; icon: LucideIcon }> = [
@@ -16,7 +18,11 @@ const activities: Array<{ id: Activity; label: string; icon: LucideIcon }> = [
 
 function App(): React.JSX.Element {
   const { activity, setActivity, bootstrap, loading, error, appVersion } = useAppStore()
-  useEffect(() => { void bootstrap() }, [bootstrap])
+  useEffect(() => {
+    void bootstrap()
+    void useHostStore.getState().load()
+    return window.remoteDeck.hosts.onState((snapshot) => useHostStore.getState().applyConnection(snapshot))
+  }, [bootstrap])
 
   if (loading) return <StateScreen title="正在加载 RemoteDeck" detail="正在读取本地设置与运行环境…" />
 
@@ -51,16 +57,20 @@ function App(): React.JSX.Element {
 }
 
 function SidebarContent({ activity }: { activity: Activity }): React.JSX.Element {
+  const hosts = useHostStore((state) => state.items)
+  const selectedId = useHostStore((state) => state.selectedId)
+  const select = useHostStore((state) => state.select)
+  const [hostSearch, setHostSearch] = useState('')
   if (activity === 'settings') return <p className="sidebar-copy">应用与连接默认行为</p>
-  if (activity === 'hosts') return <p className="sidebar-copy">暂无主机。完成首次添加后会在此分组显示。</p>
+  if (activity === 'hosts') return hosts.length === 0 ? <p className="sidebar-copy">暂无主机。可在主工作区添加或导入。</p> : <><input className="sidebar-search" aria-label="搜索主机" placeholder="搜索主机或分组" value={hostSearch} onChange={(event) => setHostSearch(event.target.value)} /><div className="host-list">{hosts.filter((item) => `${item.host.alias} ${item.host.hostname} ${item.host.groups.join(' ')}`.toLowerCase().includes(hostSearch.toLowerCase())).map((item) => <button key={item.host.id} className={selectedId === item.host.id ? 'host-list-item selected' : 'host-list-item'} onClick={() => select(item.host.id)}><span className={`status-dot status-${item.state}`} /><span><strong>{item.host.alias}</strong><small>{item.host.groups.length > 0 ? item.host.groups.join(' · ') : item.host.hostname}</small></span></button>)}</div></>
   return <p className="sidebar-copy">选择并连接主机后，可在此访问{activity === 'files' ? '远程文件' : activity === 'tunnels' ? '端口隧道' : '命令预设'}。</p>
 }
 
 function WorkspaceContent({ activity }: { activity: Activity }): React.JSX.Element {
   const setActivity = useAppStore((state) => state.setActivity)
   if (activity === 'settings') return <SettingsPanel />
+  if (activity === 'hosts') return <HostPanel />
   const copy = {
-    hosts: ['连接你的 Linux 工作站', 'RemoteDeck 会在首次连接时展示并要求确认服务器主机指纹。'],
     files: ['远程文件', '连接主机后可浏览、上传和下载 SFTP 文件。'],
     tunnels: ['隧道管理器', '连接主机后可创建独立的 LocalForward 与 RemoteForward。'],
     commands: ['命令预设', '连接主机后可执行带风险分级和确认策略的命令。']
@@ -70,8 +80,7 @@ function WorkspaceContent({ activity }: { activity: Activity }): React.JSX.Eleme
       <TerminalSquare size={42} strokeWidth={1.35} />
       <h1>{copy[0]}</h1>
       <p>{copy[1]}</p>
-      {activity !== 'hosts' && <button className="primary" onClick={() => setActivity('hosts')}>返回主机</button>}
-      {activity === 'hosts' && <button className="secondary" onClick={() => setActivity('settings')}>查看默认设置</button>}
+      <button className="primary" onClick={() => setActivity('hosts')}>返回主机</button>
     </section>
   )
 }
