@@ -55,7 +55,8 @@ export class CommandService extends EventEmitter {
     const required = preset.confirmationText?.trim() || profile.host.alias
     const command = composeCommand(preset)
     const cwd = preset.workingDirectory ?? profile.workspace?.remotePath
-    return { ...analyzeCommandRisk(command, preset.risk, required), displayCommand: inDirectory(command, cwd), targetAlias: profile.host.alias, ...(cwd ? { workingDirectory: cwd } : {}) }
+    const legacyRules = await this.#profiles.listLegacyRiskRules()
+    return { ...analyzeCommandRisk(command, preset.risk, required, legacyRules), displayCommand: inDirectory(command, cwd), targetAlias: profile.host.alias, ...(cwd ? { workingDirectory: cwd } : {}) }
   }
 
   listJobs(): CommandJob[] { return [...this.#jobs.values()].map(({ job }) => structuredClone(job)) }
@@ -66,7 +67,7 @@ export class CommandService extends EventEmitter {
     if (definition && !definition.available) throw new Error(definition.unavailableReason ?? 'Command is unavailable on this host')
     const command = composeCommand(preset)
     const required = preset.confirmationText?.trim() || profile.host.alias
-    const analysis = analyzeCommandRisk(command, preset.risk, required)
+    const analysis = analyzeCommandRisk(command, preset.risk, required, await this.#profiles.listLegacyRiskRules())
     enforceConfirmation(analysis, request.confirmed, request.confirmationInput)
     const cwd = preset.workingDirectory ?? profile.workspace?.remotePath
     const finalCommand = inDirectory(command, cwd)

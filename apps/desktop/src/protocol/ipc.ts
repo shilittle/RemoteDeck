@@ -81,6 +81,7 @@ import {
   commandPresetUpdateSchema,
   commandRunRequestSchema
 } from './command'
+import { legacyMigrationApplySchema, legacyMigrationPreviewSchema, legacyMigrationResultSchema } from './migration'
 
 export const IPC_CHANNELS = {
   bootstrap: 'v1:app.bootstrap',
@@ -151,6 +152,9 @@ export const IPC_CHANNELS = {
   codexInstallPlan: 'v1:codex.installPlan',
   codexProbe: 'v1:codex.probe',
   codexAction: 'v1:codex.action',
+  legacyPick: 'v1:legacy.pick',
+  legacyPreview: 'v1:legacy.preview',
+  legacyApply: 'v1:legacy.apply',
   hostStateEvent: 'v1:event.hostState',
   terminalEvent: 'v1:event.terminal',
   transferEvent: 'v1:event.transfer',
@@ -237,7 +241,10 @@ export const ipcContracts = {
   commandsCancel: { channel: IPC_CHANNELS.commandsCancel, input: commandJobRequestSchema, output: commandJobSchema },
   codexInstallPlan: { channel: IPC_CHANNELS.codexInstallPlan, input: emptyRequestSchema, output: codexInstallPlanSchema },
   codexProbe: { channel: IPC_CHANNELS.codexProbe, input: codexProbeRequestSchema, output: codexStatusSchema },
-  codexAction: { channel: IPC_CHANNELS.codexAction, input: codexActionRequestSchema, output: codexActionResultSchema }
+  codexAction: { channel: IPC_CHANNELS.codexAction, input: codexActionRequestSchema, output: codexActionResultSchema },
+  legacyPick: { channel: IPC_CHANNELS.legacyPick, input: emptyRequestSchema, output: z.object({ path: z.string().max(32_767).nullable() }) },
+  legacyPreview: { channel: IPC_CHANNELS.legacyPreview, input: z.object({ sourcePath: z.string().min(1).max(32_767) }).strict(), output: legacyMigrationPreviewSchema },
+  legacyApply: { channel: IPC_CHANNELS.legacyApply, input: legacyMigrationApplySchema, output: legacyMigrationResultSchema }
 } as const
 
 export interface RemoteDeckApi {
@@ -341,5 +348,10 @@ export interface RemoteDeckApi {
     installPlan(): Promise<z.infer<typeof ipcContracts.codexInstallPlan.output>>
     probe(hostId: string): Promise<z.infer<typeof ipcContracts.codexProbe.output>>
     action(request: z.infer<typeof ipcContracts.codexAction.input>): Promise<z.infer<typeof ipcContracts.codexAction.output>>
+  }
+  legacy: {
+    pick(): Promise<z.infer<typeof ipcContracts.legacyPick.output>>
+    preview(sourcePath: string): Promise<z.infer<typeof ipcContracts.legacyPreview.output>>
+    apply(request: z.infer<typeof ipcContracts.legacyApply.input>): Promise<z.infer<typeof ipcContracts.legacyApply.output>>
   }
 }

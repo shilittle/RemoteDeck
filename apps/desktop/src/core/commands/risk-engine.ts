@@ -26,7 +26,7 @@ const readOnlyCommands = new Set([
   'squeue', 'ss', 'stat', 'tail', 'top', 'uname', 'uptime', 'vmstat', 'wc', 'who', 'whoami'
 ])
 
-export function analyzeCommandRisk(command: string, declaredRisk: CommandPreset['risk'], requiredConfirmation: string | null): CommandAnalysis {
+export function analyzeCommandRisk(command: string, declaredRisk: CommandPreset['risk'], requiredConfirmation: string | null, legacyPatterns: string[] = []): CommandAnalysis {
   const reasons: string[] = []
   let detectedRisk: CommandPreset['risk'] = isReadOnlyCommand(command) ? 'L0' : 'L1'
   if (detectedRisk === 'L1') reasons.push('自定义命令不在只读允许集内，按状态变更处理')
@@ -35,6 +35,12 @@ export function analyzeCommandRisk(command: string, declaredRisk: CommandPreset[
   }
   for (const [pattern, reason] of levelTwoPatterns) {
     if (pattern.test(command)) { detectedRisk = 'L2'; reasons.push(reason) }
+  }
+  for (const source of legacyPatterns) {
+    if (!isSafeLegacyPattern(source)) continue
+    try {
+      if (new RegExp(source, 'i').test(command)) { detectedRisk = maxRisk(detectedRisk, 'L1'); reasons.push('匹配已导入的旧版风险规则') }
+    } catch { /* invalid legacy expressions stay persisted for audit but never execute */ }
   }
   if (order[declaredRisk] > order[detectedRisk]) reasons.push(`预设声明风险为 ${declaredRisk}`)
   const effectiveRisk = maxRisk(declaredRisk, detectedRisk)
@@ -58,4 +64,8 @@ function isReadOnlyCommand(command: string): boolean {
 
 function maxRisk(left: CommandPreset['risk'], right: CommandPreset['risk']): CommandPreset['risk'] {
   return order[left] >= order[right] ? left : right
+}
+
+function isSafeLegacyPattern(source: string): boolean {
+  return source.length <= 1024 && !/\\[1-9]|\(\?<|\([^)]*[+*][^)]*\)[+*{]/.test(source)
 }

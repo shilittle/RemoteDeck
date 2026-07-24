@@ -44,6 +44,7 @@ test('real xterm PTY supports tabs, Unicode, Ctrl+C, search, resize, rename, and
     window.on('pageerror', (error) => rendererErrors.push(error.message))
     window.on('console', (message) => { if (message.type() === 'error' && !message.text().includes("frame-ancestors' is ignored")) rendererErrors.push(message.text()) })
     await window.waitForLoadState('domcontentloaded')
+    await window.getByRole('button', { name: '添加第一台主机' }).click()
     const sshConfigPath = join(userData, '.ssh', 'config')
     await window.evaluate((configPath) => (globalThis as unknown as { remoteDeck: { settings: { update: (value: { sshConfigPath: string }) => Promise<unknown> } } }).remoteDeck.settings.update({ sshConfigPath: configPath }), sshConfigPath)
     await window.getByLabel('别名').fill('pty-e2e')
@@ -54,6 +55,7 @@ test('real xterm PTY supports tabs, Unicode, Ctrl+C, search, resize, rename, and
 
     await window.getByLabel('密码 / 交互回答').fill('terminal-secret')
     await window.getByRole('button', { name: '连接', exact: true }).click()
+    await window.getByRole('button', { name: '完成向导' }).click()
     await expect(window.getByRole('heading', { name: '首次连接：确认主机指纹' })).toBeVisible()
     await window.getByRole('button', { name: '接受并保存' }).click()
     await window.getByLabel('密码 / 交互回答').fill('terminal-secret')
@@ -112,7 +114,17 @@ test('real xterm PTY supports tabs, Unicode, Ctrl+C, search, resize, rename, and
     await confirmInput.fill('pty-e2e')
     await window.getByRole('button', { name: '确认执行' }).click()
     await expect.poll(async () => window.locator('.command-jobs').innerText()).toContain('COMMAND_E2E_OK')
-    await expect(window.getByText('未安装', { exact: true })).toBeVisible()
+    await window.keyboard.press('Control+J')
+    await expect(window.getByRole('region', { name: '任务中心' })).toBeVisible()
+    await expect(window.getByRole('region', { name: '任务中心' })).toContainText('E2E 高风险命令')
+    await window.keyboard.press('Control+J')
+    await expect(window.getByText('已登录', { exact: true })).toBeVisible()
+    await window.getByRole('button', { name: '普通 Codex 终端' }).click()
+    await expect.poll(async () => window.locator('.terminal-surface.active .xterm-rows').innerText()).toContain('exec codex')
+    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close())
+    await expect.poll(() => application?.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible())).toBe(false)
+    await expect.poll(async () => (await window.evaluate(() => (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck.hosts.list()))[0]?.state).toBe('online')
+    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.show())
   } finally {
     if (application) await application.close()
     await rm(userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
@@ -135,7 +147,14 @@ function configureClient(client: Connection): void {
         if (info.command.includes('python3 -u -')) {
           stream.resume()
           stream.once('end', () => stream.write(`${JSON.stringify(telemetryPayload())}\n`))
-        } else if (info.command.includes('command -v codex')) { stream.exit(0); stream.end() }
+        } else if (info.command.includes('command -v codex')) { stream.write('/mock/bin/codex\n'); stream.exit(0); stream.end() }
+        else if (info.command === 'codex --version') { stream.write('codex-cli 1.2.3\n'); stream.exit(0); stream.end() }
+        else if (info.command === 'codex login status') { stream.write('Logged in using ChatGPT\n'); stream.exit(0); stream.end() }
+        else if (info.command === 'codex --help') { stream.write('Commands: login resume update\n'); stream.exit(0); stream.end() }
+        else if (info.command === 'codex login --help') { stream.write('Usage: codex login --device-auth\n'); stream.exit(0); stream.end() }
+        else if (info.command === 'codex resume --help') { stream.write('Usage: codex resume --last\n'); stream.exit(0); stream.end() }
+        else if (info.command === 'codex update --help') { stream.write('Usage: codex update\n'); stream.exit(0); stream.end() }
+        else if (info.command.includes('command -v tmux')) { stream.write('/usr/bin/tmux\n'); stream.exit(0); stream.end() }
         else if (info.command.includes('remotedeck-e2e-never-created')) { stream.write('COMMAND_E2E_OK\n'); stream.exit(0); stream.end() }
         else { stream.write('0 0'); stream.exit(0); stream.end() }
       })

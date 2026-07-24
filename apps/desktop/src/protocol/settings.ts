@@ -13,6 +13,8 @@ export const appSettingsSchema = z.object({
   sshConfigPath: z.string().max(32_767),
   downloadDirectory: z.string().max(32_767),
   autoReconnect: z.boolean(),
+  btopWatchdogEnabled: z.boolean().default(false),
+  btopRotationMinutes: z.number().int().min(1).max(1440).default(15),
   logLevel: logLevelSchema,
   onboardingCompleted: z.boolean()
 })
@@ -30,10 +32,11 @@ export const defaultAppSettings: AppSettings = {
   sshConfigPath: '',
   downloadDirectory: '',
   autoReconnect: true,
+  btopWatchdogEnabled: false,
+  btopRotationMinutes: 15,
   logLevel: 'info',
   onboardingCompleted: false
 }
 
 export type AppSettings = z.infer<typeof appSettingsSchema>
 export type AppSettingsPatch = z.infer<typeof appSettingsPatchSchema>
-

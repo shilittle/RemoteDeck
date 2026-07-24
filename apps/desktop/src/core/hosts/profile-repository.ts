@@ -17,7 +17,11 @@ const profileDatabaseSchema = z.object({
   tunnels: z.array(tunnelProfileSchema).default([]),
   commands: z.array(commandPresetSchema).default([]),
   privateKeys: z.array(privateKeyMetadataSchema).default([]),
-  imports: z.array(z.object({ sourceHash: z.string().regex(/^[a-f0-9]{64}$/), unsupported: z.array(z.object({ alias: z.string(), lines: z.array(z.string()) })) })).default([])
+  imports: z.array(z.object({
+    sourceHash: z.string().regex(/^[a-f0-9]{64}$/),
+    unsupported: z.array(z.object({ alias: z.string(), lines: z.array(z.string()) })),
+    legacyRiskRules: z.array(z.string().min(1).max(1024)).max(128).default([])
+  })).default([])
 })
 
 type ProfileDatabase = z.infer<typeof profileDatabaseSchema>
@@ -185,8 +189,12 @@ export class ProfileRepository {
     return (await this.#store.load()).imports.some((item) => item.sourceHash === sourceHash)
   }
 
-  async recordImport(sourceHash: string, unsupported: Array<{ alias: string; lines: string[] }>): Promise<void> {
-    await this.#store.update((data) => data.imports.some((item) => item.sourceHash === sourceHash) ? data : { ...data, imports: [...data.imports, { sourceHash, unsupported }] })
+  async recordImport(sourceHash: string, unsupported: Array<{ alias: string; lines: string[] }>, legacyRiskRules: string[] = []): Promise<void> {
+    await this.#store.update((data) => data.imports.some((item) => item.sourceHash === sourceHash) ? data : { ...data, imports: [...data.imports, { sourceHash, unsupported, legacyRiskRules }] })
+  }
+
+  async listLegacyRiskRules(): Promise<string[]> {
+    return [...new Set((await this.#store.load()).imports.flatMap((item) => item.legacyRiskRules))]
   }
 
   async addTunnel(input: Omit<TunnelProfile, 'schemaVersion' | 'id' | 'createdAt' | 'updatedAt'>): Promise<TunnelProfile> {

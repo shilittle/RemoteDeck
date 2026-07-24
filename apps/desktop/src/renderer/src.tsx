@@ -1,6 +1,7 @@
-import { StrictMode, useEffect, useState } from 'react'
+import { Component, StrictMode, useEffect, useState } from 'react'
+import type { ErrorInfo, ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ChartNoAxesCombined, Command, Files, HardDrive, MonitorCog, Save, Server, Settings, TerminalSquare } from 'lucide-react'
+import { ChartNoAxesCombined, CircleAlert, Command, Files, HardDrive, Save, Server, Settings, TerminalSquare } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AppSettingsPatch } from '../protocol/settings'
 import { type Activity, useAppStore } from './store'
@@ -11,6 +12,9 @@ import { FilePanel } from './features/files/FilePanel'
 import { TunnelPanel } from './features/tunnels/TunnelPanel'
 import { TelemetryPanel } from './features/telemetry/TelemetryPanel'
 import { CommandPanel } from './features/commands/CommandPanel'
+import { TaskCenter } from './features/tasks/TaskCenter'
+import { OnboardingGuide } from './features/onboarding/OnboardingGuide'
+import { LegacyMigrationPanel } from './features/migration/LegacyMigrationPanel'
 import './styles.css'
 
 const activities: Array<{ id: Activity; label: string; icon: LucideIcon }> = [
@@ -33,6 +37,21 @@ function App(): React.JSX.Element {
     void useHostStore.getState().load()
     return window.remoteDeck.hosts.onState((snapshot) => useHostStore.getState().applyConnection(snapshot))
   }, [bootstrap])
+  useEffect(() => {
+    const shortcut = (event: KeyboardEvent): void => {
+      if (!event.ctrlKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      if (target?.matches('input, textarea, select') && event.key !== ',') return
+      const activitiesByDigit: Record<string, Activity> = { '1': 'hosts', '2': 'terminal', '3': 'files', '4': 'tunnels', '5': 'monitor', '6': 'commands', '7': 'settings' }
+      const next = activitiesByDigit[event.key]
+      if (next) { event.preventDefault(); setActivity(next); return }
+      if (event.shiftKey && event.key.toLowerCase() === 't') { event.preventDefault(); setActivity('terminal'); window.dispatchEvent(new Event('remotedeck:new-terminal')); return }
+      if (event.key === ',') { event.preventDefault(); setActivity('settings'); return }
+      if (event.key.toLowerCase() === 'j') { event.preventDefault(); window.dispatchEvent(new Event('remotedeck:toggle-task-center')) }
+    }
+    window.addEventListener('keydown', shortcut)
+    return () => window.removeEventListener('keydown', shortcut)
+  }, [setActivity])
 
   if (loading) return <StateScreen title="正在加载 RemoteDeck" detail="正在读取本地设置与运行环境…" />
 
@@ -56,13 +75,11 @@ function App(): React.JSX.Element {
       </aside>
       <main className="workspace">
         {error && <div className="error-banner" role="alert">{error}</div>}
+        <OnboardingGuide />
         <TerminalWorkspace hidden={activity !== 'terminal'} />
         {activity !== 'terminal' && <WorkspaceContent activity={activity} />}
       </main>
-      <footer className="statusbar">
-        <span><MonitorCog size={14} /> 本地服务就绪</span>
-        <span>SSH {selected?.state ?? '未连接'}</span>
-      </footer>
+      <TaskCenter />
     </div>
   )
 }
@@ -106,7 +123,11 @@ function SettingsPanel(): React.JSX.Element {
         <label><span>日志级别</span><select value={value.logLevel} onChange={(event) => setDraft({ ...draft, logLevel: event.target.value as typeof value.logLevel })}><option value="debug">Debug</option><option value="info">Info</option><option value="warn">Warn</option><option value="error">Error</option></select></label>
         <label className="toggle"><input type="checkbox" checked={value.autoReconnect} onChange={(event) => setDraft({ ...draft, autoReconnect: event.target.checked })} /><span>网络恢复后自动重连</span></label>
         <label className="toggle"><input type="checkbox" checked={value.closeToTray} onChange={(event) => setDraft({ ...draft, closeToTray: event.target.checked })} /><span>关闭窗口时保留到托盘</span></label>
+        <label className="toggle"><input type="checkbox" checked={value.launchAtLogin} onChange={(event) => setDraft({ ...draft, launchAtLogin: event.target.checked })} /><span>登录 Windows 后启动到托盘</span></label>
+        <label className="toggle"><input type="checkbox" checked={value.btopWatchdogEnabled} onChange={(event) => setDraft({ ...draft, btopWatchdogEnabled: event.target.checked })} /><span>默认启用 btop watchdog</span></label>
+        <label><span>btop 轮换（分钟）</span><input type="number" min="1" max="1440" value={value.btopRotationMinutes} onChange={(event) => setDraft({ ...draft, btopRotationMinutes: Number(event.target.value) })} /></label>
       </div>
+      <LegacyMigrationPanel />
     </section>
   )
 }
@@ -115,6 +136,13 @@ function StateScreen({ title, detail }: { title: string; detail: string }): Reac
   return <main className="state-screen"><div className="loading-ring" /><h1>{title}</h1><p>{detail}</p></main>
 }
 
+class RendererErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
+  state = { error: null as string | null }
+  static getDerivedStateFromError(error: unknown): { error: string } { return { error: error instanceof Error ? error.message : String(error) } }
+  componentDidCatch(error: Error, info: ErrorInfo): void { console.error('Renderer boundary', error.message, info.componentStack) }
+  render(): ReactNode { return this.state.error ? <main className="state-screen"><CircleAlert size={36} /><h1>界面遇到错误</h1><p>{this.state.error}</p><button className="primary" onClick={() => window.location.reload()}>重新加载界面</button></main> : this.props.children }
+}
+
 const root = document.getElementById('root')
 if (!root) throw new Error('Renderer root is missing')
-createRoot(root).render(<StrictMode><App /></StrictMode>)
+createRoot(root).render(<StrictMode><RendererErrorBoundary><App /></RendererErrorBoundary></StrictMode>)

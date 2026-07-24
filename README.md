@@ -23,4 +23,4 @@ pnpm verify
 pnpm dist:win
 ```
 
-See [`docs/execution-plan.md`](docs/execution-plan.md), [`docs/ssh.md`](docs/ssh.md), [`docs/terminal.md`](docs/terminal.md), [`docs/sftp.md`](docs/sftp.md), [`docs/commands-codex.md`](docs/commands-codex.md), [`docs/security.md`](docs/security.md), [`docs/baseline-v0.1.md`](docs/baseline-v0.1.md), and [`docs/scope-v1.md`](docs/scope-v1.md).
+See [`docs/execution-plan.md`](docs/execution-plan.md), [`docs/ssh.md`](docs/ssh.md), [`docs/terminal.md`](docs/terminal.md), [`docs/sftp.md`](docs/sftp.md), [`docs/commands-codex.md`](docs/commands-codex.md), [`docs/experience-and-migration.md`](docs/experience-and-migration.md), [`docs/security.md`](docs/security.md), [`docs/baseline-v0.1.md`](docs/baseline-v0.1.md), and [`docs/scope-v1.md`](docs/scope-v1.md).

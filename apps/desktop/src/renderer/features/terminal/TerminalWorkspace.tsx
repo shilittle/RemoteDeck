@@ -75,6 +75,12 @@ export function TerminalWorkspace({ hidden }: { hidden: boolean }): React.JSX.El
   }, [])
 
   useEffect(() => {
+    const create = (): void => { void createTab() }
+    window.addEventListener('remotedeck:new-terminal', create)
+    return () => window.removeEventListener('remotedeck:new-terminal', create)
+  }, [createTab])
+
+  useEffect(() => {
     if (!hidden && tabs.length === 0 && selected?.state === 'online') void createTab()
   }, [createTab, hidden, selected?.state, tabs.length])
 

@@ -149,7 +149,7 @@ describe('Docker OpenSSH password-to-key lifecycle', () => {
     }
 
     const collectorPath = resolve(import.meta.dirname, '../../../../packages/remote-collector/collector.py')
-    const telemetry = new TelemetryService(connections, () => Promise.resolve({ schemaVersion: 1, launchAtLogin: false, closeToTray: true, terminalFontFamily: 'monospace', terminalFontSize: 14, telemetryIntervalSeconds: 1, telemetryRetentionMinutes: 5, sshConfigPath: '', downloadDirectory: '', autoReconnect: true, logLevel: 'info', onboardingCompleted: true }), () => readFile(collectorPath, 'utf8'), pino({ enabled: false }))
+    const telemetry = new TelemetryService(connections, () => Promise.resolve({ schemaVersion: 1, launchAtLogin: false, closeToTray: true, terminalFontFamily: 'monospace', terminalFontSize: 14, telemetryIntervalSeconds: 1, telemetryRetentionMinutes: 5, sshConfigPath: '', downloadDirectory: '', autoReconnect: true, btopWatchdogEnabled: false, btopRotationMinutes: 15, logLevel: 'info', onboardingCompleted: true }), () => readFile(collectorPath, 'utf8'), pino({ enabled: false }))
     const btop = new BtopService(connections, pino({ enabled: false }))
     try {
       await telemetry.start(profile.host.id)

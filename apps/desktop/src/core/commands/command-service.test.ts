@@ -28,7 +28,8 @@ describe('command execution guardrails', () => {
     const profiles = {
       get: () => Promise.resolve({ host: { id: hostId, alias: 'worker' }, workspace: { remotePath: '/srv/work tree' } }),
       getCommand: (id: string) => Promise.resolve(commands.get(id)),
-      listCommands: () => Promise.resolve([...commands.values()])
+      listCommands: () => Promise.resolve([...commands.values()]),
+      listLegacyRiskRules: () => Promise.resolve([])
     }
     const service = new CommandService(profiles as never, { stateFor: () => 'offline', getOnlineClient: () => client } as never, {} as never)
 
@@ -53,7 +54,7 @@ describe('command execution guardrails', () => {
   it('opens PTY commands through TerminalService and preserves sudo/cwd quoting', async () => {
     const pty = preset('20000000-0000-4000-8000-000000000003', "printf '%s' okay", 'L1', { requiresPty: true, requiresSudo: true })
     const writes: string[] = []
-    const profiles = { get: () => Promise.resolve({ host: { id: hostId, alias: 'worker' }, workspace: { remotePath: "/srv/it's work" } }), getCommand: () => Promise.resolve(pty), listCommands: () => Promise.resolve([pty]) }
+    const profiles = { get: () => Promise.resolve({ host: { id: hostId, alias: 'worker' }, workspace: { remotePath: "/srv/it's work" } }), getCommand: () => Promise.resolve(pty), listCommands: () => Promise.resolve([pty]), listLegacyRiskRules: () => Promise.resolve([]) }
     const terminals = { create: () => Promise.resolve({ id: '30000000-0000-4000-8000-000000000001' }), write: (_id: string, data: string) => { writes.push(data) } }
     const service = new CommandService(profiles as never, { stateFor: () => 'offline' } as never, terminals as never)
     const job = await service.run({ hostId, presetId: pty.id, confirmed: true, confirmationInput: '' })

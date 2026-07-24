@@ -146,6 +146,11 @@ const api: RemoteDeckApi = Object.freeze({
     installPlan: () => invoke(ipcContracts.codexInstallPlan, {}),
     probe: (hostId: string) => invoke(ipcContracts.codexProbe, { hostId }),
     action: (request: Parameters<RemoteDeckApi['codex']['action']>[0]) => invoke(ipcContracts.codexAction, request)
+  }),
+  legacy: Object.freeze({
+    pick: () => invoke(ipcContracts.legacyPick, {}),
+    preview: (sourcePath: string) => invoke(ipcContracts.legacyPreview, { sourcePath }),
+    apply: (request: Parameters<RemoteDeckApi['legacy']['apply']>[0]) => invoke(ipcContracts.legacyApply, request)
   })
 })
 

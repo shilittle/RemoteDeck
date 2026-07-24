@@ -10,7 +10,7 @@ import { TelemetryService } from './telemetry-service'
 const hostId = '11111111-1111-4111-8111-111111111111'
 const services: TelemetryService[] = []
 const btopServices: BtopService[] = []
-const settings: AppSettings = { schemaVersion: 1, launchAtLogin: false, closeToTray: true, terminalFontFamily: 'monospace', terminalFontSize: 14, telemetryIntervalSeconds: 1, telemetryRetentionMinutes: 30, sshConfigPath: '', downloadDirectory: '', autoReconnect: true, logLevel: 'info', onboardingCompleted: false }
+const settings: AppSettings = { schemaVersion: 1, launchAtLogin: false, closeToTray: true, terminalFontFamily: 'monospace', terminalFontSize: 14, telemetryIntervalSeconds: 1, telemetryRetentionMinutes: 30, sshConfigPath: '', downloadDirectory: '', autoReconnect: true, btopWatchdogEnabled: false, btopRotationMinutes: 15, logLevel: 'info', onboardingCompleted: false }
 
 afterEach(() => {
   services.splice(0).forEach((service) => service.stopAll())

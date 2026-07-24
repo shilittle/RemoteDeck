@@ -30,6 +30,8 @@ Command presets are reloaded and classified in main at run time. Declared risk i
 
 Codex integration executes fixed probes and version-advertised stable CLI commands only. The official installer/update fallback is immutable and main requires explicit confirmation. RemoteDeck never requests a key/token, reads `auth.json`, parses TUI bytes, or supplies a sandbox-bypass flag. Login and all interactive Codex modes run in the normal SSH PTY; tmux persistence uses a deterministic app-owned session name.
 
+Legacy migration reads only a native-picker path passed through its dedicated IPC contract, limits bytes, validates a narrow schema, and shows a full preview. Content hashes prevent duplicate import. Legacy cleanup commands are imported disabled, and legacy regex rules cannot lower risk; backreferences, lookbehind, nested quantified groups, invalid expressions, and oversized patterns are never executed. Closing to tray is distinct from quitting: hiding the BrowserWindow does not dispose background resources, while the `before-quit` path owns complete cleanup.
+
 ## Trust boundaries still requiring user action
 
 RemoteDeck cannot decide whether an unknown host key belongs to the intended server, provide a user's SSH secret, authorize a code-signing identity, or perform a real Codex account login. Those actions require explicit user confirmation or input; tests use local SSH fixtures and mocked external account boundaries.

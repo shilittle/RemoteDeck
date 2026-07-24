@@ -17,6 +17,7 @@ import type { TelemetryService } from '../../core/telemetry/telemetry-service'
 import type { BtopService } from '../../core/telemetry/btop-service'
 import type { CommandService } from '../../core/commands/command-service'
 import type { CodexService } from '../../core/commands/codex-service'
+import type { LegacyMigrationService } from '../../core/migration/legacy-migration-service'
 import { IPC_CHANNELS } from '../../protocol/ipc'
 
 interface IpcDependencies {
@@ -35,12 +36,13 @@ interface IpcDependencies {
   btop: BtopService
   commands: CommandService
   codex: CodexService
+  legacy: LegacyMigrationService
   logger: Logger
   appVersion: string
 }
 
 export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
-  const { ipcMain, window, settings, hosts, profiles, connections, keys, terminals, sftp, transfers, tunnels, telemetry, btop, commands, codex, logger, appVersion } = dependencies
+  const { ipcMain, window, settings, hosts, profiles, connections, keys, terminals, sftp, transfers, tunnels, telemetry, btop, commands, codex, legacy, logger, appVersion } = dependencies
   const channels: string[] = []
 
   register(ipcContracts.bootstrap, async () => ({
@@ -138,6 +140,12 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
   register(ipcContracts.codexInstallPlan, () => codex.installPlan())
   register(ipcContracts.codexProbe, (request) => codex.probe(request.hostId))
   register(ipcContracts.codexAction, (request) => codex.action(request))
+  register(ipcContracts.legacyPick, async () => {
+    const selection = await dialog.showOpenDialog(window, { title: '选择 LabPulse SSH 旧版 config.json', properties: ['openFile'], filters: [{ name: 'JSON config', extensions: ['json'] }] })
+    return { path: selection.canceled ? null : selection.filePaths[0] ?? null }
+  })
+  register(ipcContracts.legacyPreview, (request) => legacy.preview(request.sourcePath))
+  register(ipcContracts.legacyApply, (request) => legacy.apply(request))
 
   const onHostState = (snapshot: unknown): void => {
     if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.hostStateEvent, snapshot)
