@@ -7,6 +7,8 @@ import { OpenSshConfigManager } from '../core/ssh-config/open-ssh-config'
 import { SshConnectionManager } from '../core/ssh/connection-manager'
 import { KeyService } from '../core/keys/key-service'
 import { TerminalService } from '../core/terminal/terminal-service'
+import { SftpService } from '../core/sftp/sftp-service'
+import { TransferService } from '../core/sftp/transfer-service'
 import { registerIpcHandlers } from './ipc/register-ipc'
 import { categoryLogger, createAppLogger } from './logging/logger'
 import { hardenWindow, installSessionSecurity, secureWindowOptions } from './security/window-security'
@@ -52,9 +54,11 @@ if (!app.requestSingleInstanceLock()) {
     const hosts = new HostService(profiles, connections, openSshConfig, settings)
     const keys = new KeyService(connections, profiles, () => hosts.syncManagedConfig())
     const terminals = new TerminalService(connections, profiles)
+    const sftp = new SftpService(connections)
+    const transfers = new TransferService(sftp)
     mainWindow = createWindow()
-    const ipcDependencies = { ipcMain, settings, hosts, profiles, connections, keys, terminals, logger: categoryLogger(logger, 'main'), appVersion: app.getVersion() }
-    disposeRuntime = () => { terminals.closeAll(); void connections.disconnectAll() }
+    const ipcDependencies = { ipcMain, settings, hosts, profiles, connections, keys, terminals, sftp, transfers, logger: categoryLogger(logger, 'main'), appVersion: app.getVersion() }
+    disposeRuntime = () => { transfers.cancelAll(); terminals.closeAll(); void connections.disconnectAll() }
     disposeIpc = registerIpcHandlers({ ...ipcDependencies, window: mainWindow })
     mainWindow.on('closed', () => { mainWindow = null })
     app.on('activate', () => {

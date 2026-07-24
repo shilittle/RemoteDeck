@@ -7,9 +7,9 @@ The development specification is the highest-level contract. Milestones are sequ
 | M0 | Baseline audit, legacy preservation, branch, repository instructions, workspace shell | Complete | `pnpm lint`, `pnpm typecheck`, `pnpm test` (1), `pnpm build`; Electron 43.2.0 shell launch smoke; legacy PowerShell parse and blob-preservation checks | `4179e26` |
 | M1 | Secure Electron boundaries, schemas, persistence, logging, base workbench, CI | Complete | `pnpm verify`; 13 unit, 1 integration, 1 Electron E2E; production build; settings restart persistence; sandbox/no-Node/narrow-IPC checks | `7c6807d` |
 | M2 | Hosts, OpenSSH config, host keys, authentication, diagnostics, key lifecycle | Complete | `pnpm verify`; 24 unit, 4 real SSH integration, 1 Electron E2E; direct/two-server ProxyJump; Docker OpenSSH password → accepted fingerprint → encrypted Ed25519 deploy/dedup/fresh-key reconnect job | `2c44009` |
-| M3 | xterm PTY, tabs, resize, Unicode/IME, search, links, reconnect | Complete | `pnpm verify`; 25 unit, 4 real SSH integration, 2 Electron E2E; real PTY keyboard/CJK/clipboard/Ctrl+C/tabs/resize/search/reconnect; Docker OpenSSH bash/vim/tmux/btop/Chinese-path acceptance job | `feat(m3): deliver real multi-tab SSH terminals` |
-| M4 | SFTP tree, CRUD, recursive transfers, conflict/cancel/progress, drag/drop | In progress | Pending | Pending |
-| M5 | Local/remote tunnels, dedicated sessions, health/recovery, proxy detection | Pending | Pending | Pending |
+| M3 | xterm PTY, tabs, resize, Unicode/IME, search, links, reconnect | Complete | `pnpm verify`; 25 unit, 4 real SSH integration, 2 Electron E2E; real PTY keyboard/CJK/clipboard/Ctrl+C/tabs/resize/search/reconnect; Docker OpenSSH bash/vim/tmux/btop/Chinese-path acceptance job | `dd9face` |
+| M4 | SFTP tree, CRUD, recursive transfers, conflict/cancel/progress, drag/drop | Complete | `pnpm verify`; 26 unit, 4 real SSH integration, 2 Electron E2E; production transfer engine with memory-SFTP Unicode/recursive/conflict/cancel coverage; Docker OpenSSH empty/CJK/100 MiB/symlink/cleanup acceptance job | `feat(m4): ship real SFTP browsing and transfers` |
+| M5 | Local/remote tunnels, dedicated sessions, health/recovery, proxy detection | In progress | Pending | Pending |
 | M6 | Collector/supervisor, charts, processes/signals, GPU, btop/watchdog | Pending | Pending | Pending |
 | M7 | Command editor/risk gates, built-ins, Codex/tmux lifecycle | Pending | Pending | Pending |
 | M8 | Onboarding, legacy migration, task center, recovery, shortcuts, tray | Pending | Pending | Pending |

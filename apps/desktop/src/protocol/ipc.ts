@@ -22,6 +22,22 @@ import {
 } from './ssh'
 import type { hostStateEventSchema } from './ssh'
 import type { terminalEventSchema } from './terminal'
+import type { transferEventSchema } from './sftp'
+import {
+  pickPathsResultSchema,
+  pickUploadRequestSchema,
+  sftpCreateRequestSchema,
+  sftpDeleteRequestSchema,
+  sftpListRequestSchema,
+  sftpListResultSchema,
+  sftpOperationResultSchema,
+  sftpRenameRequestSchema,
+  transferDownloadRequestSchema,
+  transferJobRequestSchema,
+  transferStartResultSchema,
+  transferUploadRequestSchema
+} from './sftp'
+import { transferJobSchema } from './domain'
 import {
   terminalCreateRequestSchema,
   terminalResizeRequestSchema,
@@ -60,8 +76,21 @@ export const IPC_CHANNELS = {
   terminalsResize: 'v1:terminals.resize',
   terminalsClose: 'v1:terminals.close',
   terminalsReconnect: 'v1:terminals.reconnect',
+  sftpList: 'v1:sftp.list',
+  sftpCreate: 'v1:sftp.create',
+  sftpRename: 'v1:sftp.rename',
+  sftpDelete: 'v1:sftp.delete',
+  sftpPickUpload: 'v1:sftp.pickUpload',
+  sftpPickDownloadDirectory: 'v1:sftp.pickDownloadDirectory',
+  transfersList: 'v1:transfers.list',
+  transfersUpload: 'v1:transfers.upload',
+  transfersDownload: 'v1:transfers.download',
+  transfersCancel: 'v1:transfers.cancel',
+  transfersRetry: 'v1:transfers.retry',
+  transfersShowInFolder: 'v1:transfers.showInFolder',
   hostStateEvent: 'v1:event.hostState',
-  terminalEvent: 'v1:event.terminal'
+  terminalEvent: 'v1:event.terminal',
+  transferEvent: 'v1:event.transfer'
 } as const
 
 export const emptyRequestSchema = z.object({}).strict()
@@ -103,7 +132,19 @@ export const ipcContracts = {
   terminalsWrite: { channel: IPC_CHANNELS.terminalsWrite, input: terminalWriteRequestSchema, output: terminalSessionSchema },
   terminalsResize: { channel: IPC_CHANNELS.terminalsResize, input: terminalResizeRequestSchema, output: terminalSessionSchema },
   terminalsClose: { channel: IPC_CHANNELS.terminalsClose, input: terminalSessionRequestSchema, output: terminalSessionSchema },
-  terminalsReconnect: { channel: IPC_CHANNELS.terminalsReconnect, input: terminalSessionRequestSchema, output: terminalSessionSchema }
+  terminalsReconnect: { channel: IPC_CHANNELS.terminalsReconnect, input: terminalSessionRequestSchema, output: terminalSessionSchema },
+  sftpList: { channel: IPC_CHANNELS.sftpList, input: sftpListRequestSchema, output: sftpListResultSchema },
+  sftpCreate: { channel: IPC_CHANNELS.sftpCreate, input: sftpCreateRequestSchema, output: sftpOperationResultSchema },
+  sftpRename: { channel: IPC_CHANNELS.sftpRename, input: sftpRenameRequestSchema, output: sftpOperationResultSchema },
+  sftpDelete: { channel: IPC_CHANNELS.sftpDelete, input: sftpDeleteRequestSchema, output: sftpOperationResultSchema },
+  sftpPickUpload: { channel: IPC_CHANNELS.sftpPickUpload, input: pickUploadRequestSchema, output: pickPathsResultSchema },
+  sftpPickDownloadDirectory: { channel: IPC_CHANNELS.sftpPickDownloadDirectory, input: emptyRequestSchema, output: pickPathsResultSchema },
+  transfersList: { channel: IPC_CHANNELS.transfersList, input: emptyRequestSchema, output: z.array(transferJobSchema) },
+  transfersUpload: { channel: IPC_CHANNELS.transfersUpload, input: transferUploadRequestSchema, output: transferStartResultSchema },
+  transfersDownload: { channel: IPC_CHANNELS.transfersDownload, input: transferDownloadRequestSchema, output: transferStartResultSchema },
+  transfersCancel: { channel: IPC_CHANNELS.transfersCancel, input: transferJobRequestSchema, output: transferJobSchema },
+  transfersRetry: { channel: IPC_CHANNELS.transfersRetry, input: transferJobRequestSchema, output: transferJobSchema },
+  transfersShowInFolder: { channel: IPC_CHANNELS.transfersShowInFolder, input: transferJobRequestSchema, output: z.object({ shown: z.literal(true) }) }
 } as const
 
 export interface RemoteDeckApi {
@@ -149,5 +190,23 @@ export interface RemoteDeckApi {
     close(sessionId: string): Promise<z.infer<typeof ipcContracts.terminalsClose.output>>
     reconnect(sessionId: string): Promise<z.infer<typeof ipcContracts.terminalsReconnect.output>>
     onEvent(callback: (event: z.infer<typeof terminalEventSchema>) => void): () => void
+  }
+  sftp: {
+    list(request: z.infer<typeof ipcContracts.sftpList.input>): Promise<z.infer<typeof ipcContracts.sftpList.output>>
+    create(request: z.infer<typeof ipcContracts.sftpCreate.input>): Promise<z.infer<typeof ipcContracts.sftpCreate.output>>
+    rename(request: z.infer<typeof ipcContracts.sftpRename.input>): Promise<z.infer<typeof ipcContracts.sftpRename.output>>
+    delete(request: z.infer<typeof ipcContracts.sftpDelete.input>): Promise<z.infer<typeof ipcContracts.sftpDelete.output>>
+    pickUpload(kind: 'files' | 'directory'): Promise<z.infer<typeof ipcContracts.sftpPickUpload.output>>
+    pickDownloadDirectory(): Promise<z.infer<typeof ipcContracts.sftpPickDownloadDirectory.output>>
+    droppedPath(file: unknown): string
+    transfers: {
+      list(): Promise<z.infer<typeof ipcContracts.transfersList.output>>
+      upload(request: z.infer<typeof ipcContracts.transfersUpload.input>): Promise<z.infer<typeof ipcContracts.transfersUpload.output>>
+      download(request: z.infer<typeof ipcContracts.transfersDownload.input>): Promise<z.infer<typeof ipcContracts.transfersDownload.output>>
+      cancel(jobId: string): Promise<z.infer<typeof ipcContracts.transfersCancel.output>>
+      retry(jobId: string): Promise<z.infer<typeof ipcContracts.transfersRetry.output>>
+      showInFolder(jobId: string): Promise<z.infer<typeof ipcContracts.transfersShowInFolder.output>>
+      onEvent(callback: (event: z.infer<typeof transferEventSchema>) => void): () => void
+    }
   }
 }

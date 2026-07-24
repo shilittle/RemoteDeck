@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -7,6 +7,9 @@ import { ProfileRepository } from '../../src/core/hosts/profile-repository'
 import { SshConnectionManager } from '../../src/core/ssh/connection-manager'
 import { TerminalService } from '../../src/core/terminal/terminal-service'
 import type { TerminalEvent } from '../../src/protocol/terminal'
+import { SftpService } from '../../src/core/sftp/sftp-service'
+import { TransferService } from '../../src/core/sftp/transfer-service'
+import type { TransferJob } from '../../src/protocol/domain'
 
 const host = process.env['REMOTEDECK_OPENSSH_HOST']
 const port = Number(process.env['REMOTEDECK_OPENSSH_PORT'])
@@ -23,6 +26,8 @@ describe('Docker OpenSSH password-to-key lifecycle', () => {
     const connections = new SshConnectionManager(repository)
     const keys = new KeyService(connections, repository)
     const terminals = new TerminalService(connections, repository)
+    const sftp = new SftpService(connections)
+    const transfers = new TransferService(sftp)
 
     const first = await connections.connect(profile.host.id, { password: 'remotedeck-test-only' })
     expect(first.state).toBe('awaiting_host_key')
@@ -61,6 +66,58 @@ describe('Docker OpenSSH password-to-key lifecycle', () => {
     terminals.write(terminal.id, '\u0003')
     terminals.write(terminal.id, `printf 'CTRL_C_OK\\n'\r`)
     await waitForOutput(() => output, 'CTRL_C_OK')
+
+    const remoteRoot = await sftp.create(profile.host.id, '/home/remotedeck', 'm4-sftp', 'directory')
+    const empty = await sftp.create(profile.host.id, remoteRoot, '空 文件.txt', 'file')
+    const renamedEmpty = await sftp.rename(profile.host.id, empty, '已重命名 空.txt')
+    expect((await sftp.list(profile.host.id, remoteRoot, true)).entries).toEqual(expect.arrayContaining([expect.objectContaining({ path: renamedEmpty, type: 'file', size: 0 })]))
+
+    const uploadDirectory = join(directory, '上传 目录')
+    await mkdir(join(uploadDirectory, 'nested'), { recursive: true })
+    await writeFile(join(uploadDirectory, 'nested', '内容 文件.txt'), 'RemoteDeck SFTP 中文内容\n', 'utf8')
+    await writeFile(join(uploadDirectory, 'empty.txt'), '', 'utf8')
+    const largeFile = join(directory, 'large 100MiB.bin')
+    const largeHandle = await open(largeFile, 'w')
+    await largeHandle.truncate(100 * 1024 * 1024)
+    await largeHandle.close()
+    const uploadJobs = transfers.startUpload({ hostId: profile.host.id, sources: [uploadDirectory, largeFile], remoteDirectory: remoteRoot, conflictPolicy: 'overwrite' })
+    await Promise.all(uploadJobs.map((job) => waitForJob(transfers, job.id, ['completed'])))
+    expect((await sftp.list(profile.host.id, remoteRoot, true)).entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: '上传 目录', type: 'directory' }),
+      expect.objectContaining({ name: 'large 100MiB.bin', type: 'file', size: 100 * 1024 * 1024 })
+    ]))
+    const renamedConflict = transfers.startUpload({ hostId: profile.host.id, sources: [largeFile], remoteDirectory: remoteRoot, conflictPolicy: 'rename' })[0]
+    if (!renamedConflict) throw new Error('Missing rename-conflict job')
+    const renamedJob = await waitForJob(transfers, renamedConflict.id, ['completed'])
+    expect(renamedJob.destination).toContain('large 100MiB (1).bin')
+
+    const downloadDirectory = join(directory, 'downloads')
+    await mkdir(downloadDirectory)
+    const downloadJobs = transfers.startDownload({ hostId: profile.host.id, sources: [`${remoteRoot}/上传 目录`, `${remoteRoot}/large 100MiB.bin`, renamedEmpty], localDirectory: downloadDirectory, conflictPolicy: 'overwrite' })
+    await Promise.all(downloadJobs.map((job) => waitForJob(transfers, job.id, ['completed'])))
+    expect(await readFile(join(downloadDirectory, '上传 目录', 'nested', '内容 文件.txt'), 'utf8')).toBe('RemoteDeck SFTP 中文内容\n')
+    expect((await stat(join(downloadDirectory, 'large 100MiB.bin'))).size).toBe(100 * 1024 * 1024)
+    expect((await stat(join(downloadDirectory, '已重命名 空.txt'))).size).toBe(0)
+
+    const cancelFile = join(directory, 'cancel 256MiB.bin')
+    const cancelHandle = await open(cancelFile, 'w')
+    await cancelHandle.truncate(256 * 1024 * 1024)
+    await cancelHandle.close()
+    const cancelJob = transfers.startUpload({ hostId: profile.host.id, sources: [cancelFile], remoteDirectory: remoteRoot, conflictPolicy: 'overwrite' })[0]
+    if (!cancelJob) throw new Error('Missing cancellation job')
+    transfers.cancel(cancelJob.id)
+    await waitForJob(transfers, cancelJob.id, ['cancelled'])
+    expect((await sftp.list(profile.host.id, remoteRoot, true)).entries.some((entry) => entry.name.includes(`remotedeck-${cancelJob.id}`))).toBe(false)
+
+    terminals.write(terminal.id, `ln -s . '/home/remotedeck/m4-sftp/loop-link'; printf 'SYMLINK_DONE\\n'\r`)
+    await waitForOutput(() => output, 'SYMLINK_DONE')
+    expect((await sftp.list(profile.host.id, remoteRoot, true)).entries).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'loop-link', type: 'symlink' })]))
+    const symlinkJob = transfers.startDownload({ hostId: profile.host.id, sources: [`${remoteRoot}/loop-link`], localDirectory: downloadDirectory, conflictPolicy: 'overwrite' })[0]
+    if (!symlinkJob) throw new Error('Missing symlink job')
+    await waitForJob(transfers, symlinkJob.id, ['failed'])
+    await sftp.delete(profile.host.id, [remoteRoot])
+    expect((await sftp.list(profile.host.id, '/home/remotedeck', true)).entries.some((entry) => entry.name === 'm4-sftp')).toBe(false)
+
     terminals.closeAll()
     await connections.disconnectAll()
   })
@@ -70,6 +127,17 @@ async function waitForOutput(read: () => string, marker: string): Promise<void> 
   const deadline = Date.now() + 15_000
   while (!read().includes(marker)) {
     if (Date.now() >= deadline) throw new Error(`Timed out waiting for terminal marker ${marker}. Output: ${read().slice(-4000)}`)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+}
+
+async function waitForJob(transfers: TransferService, jobId: string, states: TransferJob['state'][]): Promise<TransferJob> {
+  const deadline = Date.now() + 30_000
+  for (;;) {
+    const job = transfers.list().find((item) => item.id === jobId)
+    if (job && states.includes(job.state)) return job
+    if (job?.state === 'failed') throw new Error(`Transfer ${jobId} failed: ${job.error ?? 'unknown error'}`)
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for transfer ${jobId}: ${JSON.stringify(job)}`)
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
 }

@@ -20,6 +20,8 @@ Pino writes structured category logs below `userData/logs`. The log hook recursi
 
 Interactive terminal bytes cross only the fixed terminal IPC contracts and are not persisted, replayed, or included in diagnostics. Clipboard access is limited to bounded text read/write operations. Terminal links accept only validated HTTP(S) URLs before the main process delegates to the operating system; `file:`, executable, and custom schemes are rejected.
 
+SFTP paths and entries cross fixed schemas; remote mutations never invoke a shell. Recursive operations use `lstat` and do not follow symbolic links. Transfers write instance/job-owned temporary names and rename only after success. Cancellation cleanup targets only those exact paths. Native pickers and dropped `File` objects establish user intent for local filesystem sources and destinations; the renderer has no general path-reading API.
+
 ## Trust boundaries still requiring user action
 
 RemoteDeck cannot decide whether an unknown host key belongs to the intended server, provide a user's SSH secret, authorize a code-signing identity, or perform a real Codex account login. Those actions require explicit user confirmation or input; tests use local SSH fixtures and mocked external account boundaries.

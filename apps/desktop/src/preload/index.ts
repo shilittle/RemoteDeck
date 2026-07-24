@@ -1,10 +1,11 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type { RemoteDeckApi } from '../protocol/ipc'
 import type { AppSettingsPatch } from '../protocol/settings'
 import type { HostCreateRequest, HostUpdateRequest, KeyDeployRequest, KeyGenerateRequest } from '../protocol/ssh'
 import { hostStateEventSchema } from '../protocol/ssh'
 import { terminalEventSchema } from '../protocol/terminal'
+import { transferEventSchema } from '../protocol/sftp'
 import { IPC_CHANNELS } from '../protocol/ipc'
 import { ipcContracts } from '../protocol/ipc'
 
@@ -68,6 +69,28 @@ const api: RemoteDeckApi = Object.freeze({
       ipcRenderer.on(IPC_CHANNELS.terminalEvent, listener)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.terminalEvent, listener)
     }
+  }),
+  sftp: Object.freeze({
+    list: (request: Parameters<RemoteDeckApi['sftp']['list']>[0]) => invoke(ipcContracts.sftpList, request),
+    create: (request: Parameters<RemoteDeckApi['sftp']['create']>[0]) => invoke(ipcContracts.sftpCreate, request),
+    rename: (request: Parameters<RemoteDeckApi['sftp']['rename']>[0]) => invoke(ipcContracts.sftpRename, request),
+    delete: (request: Parameters<RemoteDeckApi['sftp']['delete']>[0]) => invoke(ipcContracts.sftpDelete, request),
+    pickUpload: (kind: 'files' | 'directory') => invoke(ipcContracts.sftpPickUpload, { kind }),
+    pickDownloadDirectory: () => invoke(ipcContracts.sftpPickDownloadDirectory, {}),
+    droppedPath: (file: unknown) => webUtils.getPathForFile(file as Parameters<typeof webUtils.getPathForFile>[0]),
+    transfers: Object.freeze({
+      list: () => invoke(ipcContracts.transfersList, {}),
+      upload: (request: Parameters<RemoteDeckApi['sftp']['transfers']['upload']>[0]) => invoke(ipcContracts.transfersUpload, request),
+      download: (request: Parameters<RemoteDeckApi['sftp']['transfers']['download']>[0]) => invoke(ipcContracts.transfersDownload, request),
+      cancel: (jobId: string) => invoke(ipcContracts.transfersCancel, { jobId }),
+      retry: (jobId: string) => invoke(ipcContracts.transfersRetry, { jobId }),
+      showInFolder: (jobId: string) => invoke(ipcContracts.transfersShowInFolder, { jobId }),
+      onEvent: (callback: Parameters<RemoteDeckApi['sftp']['transfers']['onEvent']>[0]) => {
+        const listener = (_event: IpcRendererEvent, raw: unknown): void => callback(transferEventSchema.parse(raw))
+        ipcRenderer.on(IPC_CHANNELS.transferEvent, listener)
+        return () => ipcRenderer.removeListener(IPC_CHANNELS.transferEvent, listener)
+      }
+    })
   })
 })
 

@@ -7,6 +7,7 @@ import { type Activity, useAppStore } from './store'
 import { useHostStore } from './host-store'
 import { HostPanel } from './features/hosts/HostPanel'
 import { TerminalWorkspace } from './features/terminal/TerminalWorkspace'
+import { FilePanel } from './features/files/FilePanel'
 import './styles.css'
 
 const activities: Array<{ id: Activity; label: string; icon: LucideIcon }> = [
@@ -78,8 +79,8 @@ function WorkspaceContent({ activity }: { activity: Activity }): React.JSX.Eleme
   if (activity === 'settings') return <SettingsPanel />
   if (activity === 'hosts') return <HostPanel />
   if (activity === 'terminal') return <TerminalWorkspace hidden={false} />
+  if (activity === 'files') return <FilePanel />
   const copy = {
-    files: ['远程文件', '连接主机后可浏览、上传和下载 SFTP 文件。'],
     tunnels: ['隧道管理器', '连接主机后可创建独立的 LocalForward 与 RemoteForward。'],
     commands: ['命令预设', '连接主机后可执行带风险分级和确认策略的命令。']
   }[activity]

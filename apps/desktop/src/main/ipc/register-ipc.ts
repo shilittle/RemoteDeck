@@ -9,6 +9,8 @@ import type { ProfileRepository } from '../../core/hosts/profile-repository'
 import type { KeyService } from '../../core/keys/key-service'
 import type { SshConnectionManager } from '../../core/ssh/connection-manager'
 import type { TerminalService } from '../../core/terminal/terminal-service'
+import type { SftpService } from '../../core/sftp/sftp-service'
+import type { TransferService } from '../../core/sftp/transfer-service'
 import { IPC_CHANNELS } from '../../protocol/ipc'
 
 interface IpcDependencies {
@@ -20,12 +22,14 @@ interface IpcDependencies {
   connections: SshConnectionManager
   keys: KeyService
   terminals: TerminalService
+  sftp: SftpService
+  transfers: TransferService
   logger: Logger
   appVersion: string
 }
 
 export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
-  const { ipcMain, window, settings, hosts, profiles, connections, keys, terminals, logger, appVersion } = dependencies
+  const { ipcMain, window, settings, hosts, profiles, connections, keys, terminals, sftp, transfers, logger, appVersion } = dependencies
   const channels: string[] = []
 
   register(ipcContracts.bootstrap, async () => ({
@@ -72,6 +76,25 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
   register(ipcContracts.terminalsResize, (request) => terminals.resize(request))
   register(ipcContracts.terminalsClose, (request) => terminals.close(request.sessionId))
   register(ipcContracts.terminalsReconnect, (request) => terminals.reconnect(request.sessionId))
+  register(ipcContracts.sftpList, (request) => sftp.list(request.hostId, request.path, request.showHidden))
+  register(ipcContracts.sftpCreate, async (request) => ({ success: true as const, affected: [await sftp.create(request.hostId, request.parentPath, request.name, request.type)] }))
+  register(ipcContracts.sftpRename, async (request) => ({ success: true as const, affected: [await sftp.rename(request.hostId, request.path, request.newName)] }))
+  register(ipcContracts.sftpDelete, async (request) => ({ success: true as const, affected: await sftp.delete(request.hostId, request.paths) }))
+  register(ipcContracts.sftpPickUpload, async (request) => {
+    const selection = await dialog.showOpenDialog(window, { title: request.kind === 'directory' ? '选择要上传的文件夹' : '选择要上传的文件', properties: request.kind === 'directory' ? ['openDirectory'] : ['openFile', 'multiSelections'] })
+    return { paths: selection.filePaths, canceled: selection.canceled }
+  })
+  register(ipcContracts.sftpPickDownloadDirectory, async () => {
+    const current = await settings.get()
+    const selection = await dialog.showOpenDialog(window, { title: '选择下载目录', ...(current.downloadDirectory ? { defaultPath: current.downloadDirectory } : {}), properties: ['openDirectory', 'createDirectory'] })
+    return { paths: selection.filePaths, canceled: selection.canceled }
+  })
+  register(ipcContracts.transfersList, () => transfers.list())
+  register(ipcContracts.transfersUpload, (request) => ({ jobs: transfers.startUpload(request) }))
+  register(ipcContracts.transfersDownload, (request) => ({ jobs: transfers.startDownload(request) }))
+  register(ipcContracts.transfersCancel, (request) => transfers.cancel(request.jobId))
+  register(ipcContracts.transfersRetry, (request) => transfers.retry(request.jobId))
+  register(ipcContracts.transfersShowInFolder, (request) => { shell.showItemInFolder(transfers.localPathFor(request.jobId)); return { shown: true as const } })
 
   const onHostState = (snapshot: unknown): void => {
     if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.hostStateEvent, snapshot)
@@ -81,6 +104,10 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
     if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.terminalEvent, event)
   }
   terminals.on('event', onTerminalEvent)
+  const onTransferEvent = (event: unknown): void => {
+    if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.transferEvent, event)
+  }
+  transfers.on('event', onTransferEvent)
 
   function register<TInput, TOutput>(
     contract: { channel: string; input: ZodType<TInput>; output: ZodType<TOutput> },
@@ -103,6 +130,7 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
     for (const channel of channels) ipcMain.removeHandler(channel)
     connections.off('state', onHostState)
     terminals.off('event', onTerminalEvent)
+    transfers.off('event', onTransferEvent)
   }
 }
 
