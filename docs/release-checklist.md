@@ -2,7 +2,7 @@
 
 ## Automated candidate gates
 
-- [x] M0–M8 completed in order with independent commits and green milestone gates.
+- [x] M0–M9 completed in order with independent commits and green milestone gates.
 - [x] `pnpm verify` green on final tree: 52 unit and 4 integration tests.
 - [x] `pnpm test:e2e` green on final production renderer build: 2/2.
 - [x] `pnpm audit --audit-level high`: no known vulnerabilities.
@@ -15,7 +15,7 @@
 
 ## Docker/real SSH acceptance
 
-- [ ] CI Docker OpenSSH job green: direct + ProxyJump, host key, password/key, `authorized_keys`, PTY, SFTP, tunnels, telemetry, btop/process and Codex external-boundary fixture.
+- [x] CI Docker OpenSSH job green: direct + ProxyJump, host key, password/key, `authorized_keys`, PTY, SFTP, tunnels, telemetry, btop/process and Codex external-boundary fixture.
 - [x] User-authorized real-host procedure is complete in `tests/manual/m9-real-host-acceptance.md`; credentials were not available to this build and are an explicit external boundary.
 - [x] Network/tunnel/tray/full-quit procedure and automated fake/Docker boundaries are complete; real external traffic remains part of the user-authorized checklist.
 - [x] Codex install/login/start/resume/update procedure and mock external account boundary are complete; account approval remains user-controlled.
@@ -24,7 +24,9 @@ Real secrets, private-key passphrases, Codex account approval and code-signing c
 
 ## Publication
 
-- [ ] M9 documentation and release candidate commit created.
-- [ ] Branch pushed when GitHub authentication is available.
-- [ ] Draft PR opened; CI observed and failures fixed.
-- [ ] Do not merge the PR and do not publish a formal Release automatically.
+- [x] M9 documentation and release candidate commit created.
+- [x] Branch pushed when GitHub authentication is available.
+- [x] Draft PR opened; CI observed and failures fixed.
+- [x] Do not merge the PR and do not publish a formal Release automatically.
+
+Final required-check evidence: [GitHub Actions run 30112478748](https://github.com/shilittle/RemoteDeck/actions/runs/30112478748) passed Ubuntu/Windows quality, two-container Docker OpenSSH direct/ProxyJump acceptance, Electron E2E, NSIS/portable packaging, both packaged launch smokes and artifact upload. Draft PR [#1](https://github.com/shilittle/RemoteDeck/pull/1) remains open and unmerged.
