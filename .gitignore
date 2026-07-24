@@ -1,3 +1,14 @@
 logs/*.log
 __pycache__/
 *.pyc
+node_modules/
+dist/
+out/
+release/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
