@@ -6,10 +6,12 @@ import type { AppSettingsPatch } from '../protocol/settings'
 import { type Activity, useAppStore } from './store'
 import { useHostStore } from './host-store'
 import { HostPanel } from './features/hosts/HostPanel'
+import { TerminalWorkspace } from './features/terminal/TerminalWorkspace'
 import './styles.css'
 
 const activities: Array<{ id: Activity; label: string; icon: LucideIcon }> = [
   { id: 'hosts', label: '主机', icon: Server },
+  { id: 'terminal', label: '终端', icon: TerminalSquare },
   { id: 'files', label: '文件', icon: Files },
   { id: 'tunnels', label: '隧道', icon: HardDrive },
   { id: 'commands', label: '命令', icon: Command },
@@ -18,6 +20,9 @@ const activities: Array<{ id: Activity; label: string; icon: LucideIcon }> = [
 
 function App(): React.JSX.Element {
   const { activity, setActivity, bootstrap, loading, error, appVersion } = useAppStore()
+  const hosts = useHostStore((state) => state.items)
+  const selectedId = useHostStore((state) => state.selectedId)
+  const selected = hosts.find((item) => item.host.id === selectedId)
   useEffect(() => {
     void bootstrap()
     void useHostStore.getState().load()
@@ -30,7 +35,7 @@ function App(): React.JSX.Element {
     <div className="workbench">
       <header className="titlebar">
         <span className="brand"><span className="brand-mark">R</span>RemoteDeck</span>
-        <div className="title-context"><span>未选择主机</span><span className="separator">/</span><span>未连接</span></div>
+        <div className="title-context"><span>{selected?.host.alias ?? '未选择主机'}</span><span className="separator">/</span><span>{selected?.workspace?.remotePath ?? '~'}</span><span className="separator">/</span><span>{selected?.state ?? '未连接'}</span></div>
         <span className="version">v{appVersion}</span>
       </header>
       <nav className="activity-rail" aria-label="工作区导航">
@@ -46,11 +51,12 @@ function App(): React.JSX.Element {
       </aside>
       <main className="workspace">
         {error && <div className="error-banner" role="alert">{error}</div>}
-        <WorkspaceContent activity={activity} />
+        <TerminalWorkspace hidden={activity !== 'terminal'} />
+        {activity !== 'terminal' && <WorkspaceContent activity={activity} />}
       </main>
       <footer className="statusbar">
         <span><MonitorCog size={14} /> 本地服务就绪</span>
-        <span>SSH 未连接</span>
+        <span>SSH {selected?.state ?? '未连接'}</span>
       </footer>
     </div>
   )
@@ -62,6 +68,7 @@ function SidebarContent({ activity }: { activity: Activity }): React.JSX.Element
   const select = useHostStore((state) => state.select)
   const [hostSearch, setHostSearch] = useState('')
   if (activity === 'settings') return <p className="sidebar-copy">应用与连接默认行为</p>
+  if (activity === 'terminal') return <p className="sidebar-copy">终端使用当前选中的在线主机。切换主机后可新建另一标签。</p>
   if (activity === 'hosts') return hosts.length === 0 ? <p className="sidebar-copy">暂无主机。可在主工作区添加或导入。</p> : <><input className="sidebar-search" aria-label="搜索主机" placeholder="搜索主机或分组" value={hostSearch} onChange={(event) => setHostSearch(event.target.value)} /><div className="host-list">{hosts.filter((item) => `${item.host.alias} ${item.host.hostname} ${item.host.groups.join(' ')}`.toLowerCase().includes(hostSearch.toLowerCase())).map((item) => <button key={item.host.id} className={selectedId === item.host.id ? 'host-list-item selected' : 'host-list-item'} onClick={() => select(item.host.id)}><span className={`status-dot status-${item.state}`} /><span><strong>{item.host.alias}</strong><small>{item.host.groups.length > 0 ? item.host.groups.join(' · ') : item.host.hostname}</small></span></button>)}</div></>
   return <p className="sidebar-copy">选择并连接主机后，可在此访问{activity === 'files' ? '远程文件' : activity === 'tunnels' ? '端口隧道' : '命令预设'}。</p>
 }
@@ -70,6 +77,7 @@ function WorkspaceContent({ activity }: { activity: Activity }): React.JSX.Eleme
   const setActivity = useAppStore((state) => state.setActivity)
   if (activity === 'settings') return <SettingsPanel />
   if (activity === 'hosts') return <HostPanel />
+  if (activity === 'terminal') return <TerminalWorkspace hidden={false} />
   const copy = {
     files: ['远程文件', '连接主机后可浏览、上传和下载 SFTP 文件。'],
     tunnels: ['隧道管理器', '连接主机后可创建独立的 LocalForward 与 RemoteForward。'],

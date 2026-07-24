@@ -6,12 +6,14 @@ import { ProfileRepository } from '../core/hosts/profile-repository'
 import { OpenSshConfigManager } from '../core/ssh-config/open-ssh-config'
 import { SshConnectionManager } from '../core/ssh/connection-manager'
 import { KeyService } from '../core/keys/key-service'
+import { TerminalService } from '../core/terminal/terminal-service'
 import { registerIpcHandlers } from './ipc/register-ipc'
 import { categoryLogger, createAppLogger } from './logging/logger'
 import { hardenWindow, installSessionSecurity, secureWindowOptions } from './security/window-security'
 
 let mainWindow: BrowserWindow | null = null
 let disposeIpc: (() => void) | undefined
+let disposeRuntime: (() => void) | undefined
 
 const e2eUserData = process.env['REMOTEDECK_E2E_USER_DATA']
 if (!app.isPackaged && e2eUserData) app.setPath('userData', e2eUserData)
@@ -49,8 +51,10 @@ if (!app.requestSingleInstanceLock()) {
     const openSshConfig = new OpenSshConfigManager(profiles)
     const hosts = new HostService(profiles, connections, openSshConfig, settings)
     const keys = new KeyService(connections, profiles, () => hosts.syncManagedConfig())
+    const terminals = new TerminalService(connections, profiles)
     mainWindow = createWindow()
-    const ipcDependencies = { ipcMain, settings, hosts, profiles, connections, keys, logger: categoryLogger(logger, 'main'), appVersion: app.getVersion() }
+    const ipcDependencies = { ipcMain, settings, hosts, profiles, connections, keys, terminals, logger: categoryLogger(logger, 'main'), appVersion: app.getVersion() }
+    disposeRuntime = () => { terminals.closeAll(); void connections.disconnectAll() }
     disposeIpc = registerIpcHandlers({ ...ipcDependencies, window: mainWindow })
     mainWindow.on('closed', () => { mainWindow = null })
     app.on('activate', () => {
@@ -65,4 +69,4 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.on('window-all-closed', () => app.quit())
-app.on('before-quit', () => disposeIpc?.())
+app.on('before-quit', () => { disposeIpc?.(); disposeRuntime?.() })

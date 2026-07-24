@@ -4,6 +4,7 @@ import type { RemoteDeckApi } from '../protocol/ipc'
 import type { AppSettingsPatch } from '../protocol/settings'
 import type { HostCreateRequest, HostUpdateRequest, KeyDeployRequest, KeyGenerateRequest } from '../protocol/ssh'
 import { hostStateEventSchema } from '../protocol/ssh'
+import { terminalEventSchema } from '../protocol/terminal'
 import { IPC_CHANNELS } from '../protocol/ipc'
 import { ipcContracts } from '../protocol/ipc'
 
@@ -18,7 +19,10 @@ async function invoke<TOutput>(
 
 const api: RemoteDeckApi = Object.freeze({
   app: Object.freeze({
-    bootstrap: () => invoke(ipcContracts.bootstrap, {})
+    bootstrap: () => invoke(ipcContracts.bootstrap, {}),
+    openExternal: (url: string) => invoke(ipcContracts.appOpenExternal, { url }),
+    clipboardRead: () => invoke(ipcContracts.appClipboardRead, {}),
+    clipboardWrite: (text: string) => invoke(ipcContracts.appClipboardWrite, { text })
   }),
   settings: Object.freeze({
     get: () => invoke(ipcContracts.settingsGet, {}),
@@ -51,6 +55,19 @@ const api: RemoteDeckApi = Object.freeze({
     generate: (request: KeyGenerateRequest) => invoke(ipcContracts.keysGenerate, request),
     deploy: (request: KeyDeployRequest) => invoke(ipcContracts.keysDeploy, request),
     verify: (request: Omit<KeyDeployRequest, 'makeDefault'>) => invoke(ipcContracts.keysVerify, request)
+  }),
+  terminals: Object.freeze({
+    list: () => invoke(ipcContracts.terminalsList, {}),
+    create: (request: Parameters<RemoteDeckApi['terminals']['create']>[0]) => invoke(ipcContracts.terminalsCreate, request),
+    write: (sessionId: string, data: string) => invoke(ipcContracts.terminalsWrite, { sessionId, data }),
+    resize: (request: Parameters<RemoteDeckApi['terminals']['resize']>[0]) => invoke(ipcContracts.terminalsResize, request),
+    close: (sessionId: string) => invoke(ipcContracts.terminalsClose, { sessionId }),
+    reconnect: (sessionId: string) => invoke(ipcContracts.terminalsReconnect, { sessionId }),
+    onEvent: (callback: Parameters<RemoteDeckApi['terminals']['onEvent']>[0]) => {
+      const listener = (_event: IpcRendererEvent, raw: unknown): void => callback(terminalEventSchema.parse(raw))
+      ipcRenderer.on(IPC_CHANNELS.terminalEvent, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.terminalEvent, listener)
+    }
   })
 })
 

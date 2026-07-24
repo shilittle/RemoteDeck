@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mergeAuthorizedKey } from './authorized-keys'
 
-const key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC6AYqgP+placeholderMaterialForUnitTest RemoteDeck'
+const key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC6AYqgP+fixtureMaterialForUnitTest RemoteDeck'
 
 describe('authorized_keys merge', () => {
   it('deduplicates by algorithm and key material regardless of comments', () => {

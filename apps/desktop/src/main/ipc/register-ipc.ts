@@ -1,4 +1,4 @@
-import { dialog } from 'electron'
+import { clipboard, dialog, shell } from 'electron'
 import type { BrowserWindow, IpcMain, IpcMainInvokeEvent } from 'electron'
 import type { Logger } from 'pino'
 import type { ZodType } from 'zod'
@@ -8,6 +8,7 @@ import type { HostService } from '../../core/hosts/host-service'
 import type { ProfileRepository } from '../../core/hosts/profile-repository'
 import type { KeyService } from '../../core/keys/key-service'
 import type { SshConnectionManager } from '../../core/ssh/connection-manager'
+import type { TerminalService } from '../../core/terminal/terminal-service'
 import { IPC_CHANNELS } from '../../protocol/ipc'
 
 interface IpcDependencies {
@@ -18,12 +19,13 @@ interface IpcDependencies {
   profiles: ProfileRepository
   connections: SshConnectionManager
   keys: KeyService
+  terminals: TerminalService
   logger: Logger
   appVersion: string
 }
 
 export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
-  const { ipcMain, window, settings, hosts, profiles, connections, keys, logger, appVersion } = dependencies
+  const { ipcMain, window, settings, hosts, profiles, connections, keys, terminals, logger, appVersion } = dependencies
   const channels: string[] = []
 
   register(ipcContracts.bootstrap, async () => ({
@@ -32,6 +34,9 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
     platform: 'win32' as const,
     settings: await settings.get()
   }))
+  register(ipcContracts.appOpenExternal, async (request) => { await shell.openExternal(request.url); return { opened: true } })
+  register(ipcContracts.appClipboardRead, () => ({ text: clipboard.readText() }))
+  register(ipcContracts.appClipboardWrite, (request) => { clipboard.writeText(request.text); return { written: true as const } })
   register(ipcContracts.settingsGet, () => settings.get())
   register(ipcContracts.settingsUpdate, (patch) => settings.update(patch))
   register(ipcContracts.hostsList, () => hosts.list())
@@ -61,11 +66,21 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
     try { return await keys.verify(request.hostId, request.privateKeyPath, request.passphrase) }
     finally { if (request.passphrase) request.passphrase = '' }
   })
+  register(ipcContracts.terminalsList, () => terminals.list())
+  register(ipcContracts.terminalsCreate, (request) => terminals.create(request))
+  register(ipcContracts.terminalsWrite, (request) => terminals.write(request.sessionId, request.data))
+  register(ipcContracts.terminalsResize, (request) => terminals.resize(request))
+  register(ipcContracts.terminalsClose, (request) => terminals.close(request.sessionId))
+  register(ipcContracts.terminalsReconnect, (request) => terminals.reconnect(request.sessionId))
 
   const onHostState = (snapshot: unknown): void => {
     if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.hostStateEvent, snapshot)
   }
   connections.on('state', onHostState)
+  const onTerminalEvent = (event: unknown): void => {
+    if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.terminalEvent, event)
+  }
+  terminals.on('event', onTerminalEvent)
 
   function register<TInput, TOutput>(
     contract: { channel: string; input: ZodType<TInput>; output: ZodType<TOutput> },
@@ -87,6 +102,7 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
   return () => {
     for (const channel of channels) ipcMain.removeHandler(channel)
     connections.off('state', onHostState)
+    terminals.off('event', onTerminalEvent)
   }
 }
 

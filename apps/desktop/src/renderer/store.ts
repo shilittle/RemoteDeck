@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { AppSettings, AppSettingsPatch } from '../protocol/settings'
 
-export type Activity = 'hosts' | 'files' | 'tunnels' | 'commands' | 'settings'
+export type Activity = 'hosts' | 'terminal' | 'files' | 'tunnels' | 'commands' | 'settings'
 
 interface AppState {
   activity: Activity

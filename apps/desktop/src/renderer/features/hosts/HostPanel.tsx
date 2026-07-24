@@ -3,6 +3,7 @@ import { Check, Copy, KeyRound, Link, Pencil, PlugZap, Plus, RefreshCw, Server, 
 import type { AuthProfile } from '../../../protocol/domain'
 import type { ConnectionCredentials, ConnectionSnapshot, HostCreateRequest, HostImportResult, HostListItem, PrivateKeyMetadata } from '../../../protocol/ssh'
 import { useHostStore } from '../../host-store'
+import { useAppStore } from '../../store'
 
 const defaultAdvanced = { connectTimeoutSeconds: 15, serverAliveIntervalSeconds: 30, serverAliveCountMax: 3, tcpKeepAlive: true, compression: false, identitiesOnly: false }
 
@@ -68,7 +69,8 @@ export function HostPanel(): React.JSX.Element {
             {jumpProfile && (jumpProfile.auth.method === 'password' || jumpProfile.auth.method === 'keyboard_interactive') && <label><span>跳板密码 / 交互回答</span><input type="password" autoComplete="off" value={jumpPassword} onChange={(event) => setJumpPassword(event.target.value)} /></label>}
             {jumpProfile?.auth.method === 'private_key' && <label><span>跳板私钥口令（如有）</span><input type="password" autoComplete="off" value={jumpPassphrase} onChange={(event) => setJumpPassphrase(event.target.value)} /></label>}
             <div className="button-row wrap">
-              <button className="primary" disabled={busy} onClick={() => run(async () => { try { const snapshot = await window.remoteDeck.hosts.connect({ hostId: selected.host.id, credentials: credentials(selected.auth, password, passphrase, jumpProfile?.auth, jumpPassword, jumpPassphrase) }); applyConnection(snapshot) } finally { clearSecretInputs(setPassword, setPassphrase, setJumpPassword, setJumpPassphrase) } })}><Link size={15} />连接</button>
+              <button className="primary" disabled={busy} onClick={() => run(async () => { try { const snapshot = await window.remoteDeck.hosts.connect({ hostId: selected.host.id, credentials: credentials(selected.auth, password, passphrase, jumpProfile?.auth, jumpPassword, jumpPassphrase) }); applyConnection(snapshot); if (snapshot.state === 'online') useAppStore.getState().setActivity('terminal') } finally { clearSecretInputs(setPassword, setPassphrase, setJumpPassword, setJumpPassphrase) } })}><Link size={15} />连接</button>
+              <button className="secondary" disabled={busy || (connection?.state ?? selected.state) !== 'online'} onClick={() => useAppStore.getState().setActivity('terminal')}><Server size={15} />打开终端</button>
               <button className="secondary" disabled={busy} onClick={() => run(async () => { try { const snapshot = await window.remoteDeck.hosts.test({ hostId: selected.host.id, credentials: credentials(selected.auth, password, passphrase, jumpProfile?.auth, jumpPassword, jumpPassphrase) }); applyConnection(snapshot); setMessage(snapshot.capabilities ? capabilityText(snapshot.capabilities) : snapshot.errorMessage ?? '测试完成') } finally { clearSecretInputs(setPassword, setPassphrase, setJumpPassword, setJumpPassphrase) } })}><Check size={15} />测试能力</button>
               <button className="secondary" disabled={busy} onClick={() => run(async () => { applyConnection(await window.remoteDeck.hosts.disconnect(selected.host.id)) })}><Unplug size={15} />断开</button>
               <button className="danger" disabled={busy} onClick={() => run(async () => { if (!window.confirm(`删除主机 ${selected.host.alias}？`)) return; await window.remoteDeck.hosts.delete({ hostId: selected.host.id, removeManagedConfig: true }); await load() })}><Trash2 size={15} />删除</button>
