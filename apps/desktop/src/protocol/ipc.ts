@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { hostKeyRecordSchema, protocolVersion } from './domain'
+import { hostKeyRecordSchema, protocolVersion, telemetrySnapshotSchema, transferJobSchema } from './domain'
 import { appSettingsPatchSchema, appSettingsSchema } from './settings'
 import {
   connectionSnapshotSchema,
@@ -37,7 +37,6 @@ import {
   transferStartResultSchema,
   transferUploadRequestSchema
 } from './sftp'
-import { transferJobSchema } from './domain'
 import type { tunnelEventSchema } from './tunnel'
 import {
   clashCandidateSchema,
@@ -48,6 +47,16 @@ import {
   tunnelStartRequestSchema,
   tunnelUpdateRequestSchema
 } from './tunnel'
+import type { telemetryEventSchema } from './telemetry'
+import {
+  btopStatusSchema,
+  btopWatchdogStartRequestSchema,
+  telemetryHostRequestSchema,
+  telemetrySignalRequestSchema,
+  telemetrySignalResultSchema,
+  telemetryStartRequestSchema,
+  telemetryStatusSchema
+} from './telemetry'
 import {
   terminalCreateRequestSchema,
   terminalResizeRequestSchema,
@@ -106,10 +115,19 @@ export const IPC_CHANNELS = {
   tunnelsStop: 'v1:tunnels.stop',
   tunnelsRestart: 'v1:tunnels.restart',
   tunnelsDetectClash: 'v1:tunnels.detectClash',
+  telemetryList: 'v1:telemetry.list',
+  telemetryHistory: 'v1:telemetry.history',
+  telemetryStart: 'v1:telemetry.start',
+  telemetryStop: 'v1:telemetry.stop',
+  telemetrySignal: 'v1:telemetry.signal',
+  btopProbe: 'v1:btop.probe',
+  btopWatchdogStart: 'v1:btop.watchdog.start',
+  btopWatchdogStop: 'v1:btop.watchdog.stop',
   hostStateEvent: 'v1:event.hostState',
   terminalEvent: 'v1:event.terminal',
   transferEvent: 'v1:event.transfer',
-  tunnelEvent: 'v1:event.tunnel'
+  tunnelEvent: 'v1:event.tunnel',
+  telemetryEvent: 'v1:event.telemetry'
 } as const
 
 export const emptyRequestSchema = z.object({}).strict()
@@ -171,7 +189,15 @@ export const ipcContracts = {
   tunnelsStart: { channel: IPC_CHANNELS.tunnelsStart, input: tunnelStartRequestSchema, output: tunnelSnapshotSchema },
   tunnelsStop: { channel: IPC_CHANNELS.tunnelsStop, input: tunnelIdRequestSchema, output: tunnelSnapshotSchema },
   tunnelsRestart: { channel: IPC_CHANNELS.tunnelsRestart, input: tunnelStartRequestSchema, output: tunnelSnapshotSchema },
-  tunnelsDetectClash: { channel: IPC_CHANNELS.tunnelsDetectClash, input: emptyRequestSchema, output: z.array(clashCandidateSchema) }
+  tunnelsDetectClash: { channel: IPC_CHANNELS.tunnelsDetectClash, input: emptyRequestSchema, output: z.array(clashCandidateSchema) },
+  telemetryList: { channel: IPC_CHANNELS.telemetryList, input: emptyRequestSchema, output: z.array(telemetryStatusSchema) },
+  telemetryHistory: { channel: IPC_CHANNELS.telemetryHistory, input: telemetryHostRequestSchema, output: z.array(telemetrySnapshotSchema) },
+  telemetryStart: { channel: IPC_CHANNELS.telemetryStart, input: telemetryStartRequestSchema, output: telemetryStatusSchema },
+  telemetryStop: { channel: IPC_CHANNELS.telemetryStop, input: telemetryHostRequestSchema, output: telemetryStatusSchema },
+  telemetrySignal: { channel: IPC_CHANNELS.telemetrySignal, input: telemetrySignalRequestSchema, output: telemetrySignalResultSchema },
+  btopProbe: { channel: IPC_CHANNELS.btopProbe, input: telemetryHostRequestSchema, output: btopStatusSchema },
+  btopWatchdogStart: { channel: IPC_CHANNELS.btopWatchdogStart, input: btopWatchdogStartRequestSchema, output: btopStatusSchema },
+  btopWatchdogStop: { channel: IPC_CHANNELS.btopWatchdogStop, input: telemetryHostRequestSchema, output: btopStatusSchema }
 } as const
 
 export interface RemoteDeckApi {
@@ -246,5 +272,18 @@ export interface RemoteDeckApi {
     restart(request: z.infer<typeof ipcContracts.tunnelsRestart.input>): Promise<z.infer<typeof ipcContracts.tunnelsRestart.output>>
     detectClash(): Promise<z.infer<typeof ipcContracts.tunnelsDetectClash.output>>
     onEvent(callback: (event: z.infer<typeof tunnelEventSchema>) => void): () => void
+  }
+  telemetry: {
+    list(): Promise<z.infer<typeof ipcContracts.telemetryList.output>>
+    history(hostId: string): Promise<z.infer<typeof ipcContracts.telemetryHistory.output>>
+    start(hostId: string): Promise<z.infer<typeof ipcContracts.telemetryStart.output>>
+    stop(hostId: string): Promise<z.infer<typeof ipcContracts.telemetryStop.output>>
+    signal(request: z.infer<typeof ipcContracts.telemetrySignal.input>): Promise<z.infer<typeof ipcContracts.telemetrySignal.output>>
+    btop: {
+      probe(hostId: string): Promise<z.infer<typeof ipcContracts.btopProbe.output>>
+      startWatchdog(request: z.infer<typeof ipcContracts.btopWatchdogStart.input>): Promise<z.infer<typeof ipcContracts.btopWatchdogStart.output>>
+      stopWatchdog(hostId: string): Promise<z.infer<typeof ipcContracts.btopWatchdogStop.output>>
+    }
+    onEvent(callback: (event: z.infer<typeof telemetryEventSchema>) => void): () => void
   }
 }

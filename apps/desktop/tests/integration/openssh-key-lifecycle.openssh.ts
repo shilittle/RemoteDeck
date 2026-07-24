@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { createServer } from 'node:net'
 import pino from 'pino'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -13,6 +13,8 @@ import { SftpService } from '../../src/core/sftp/sftp-service'
 import { TransferService } from '../../src/core/sftp/transfer-service'
 import type { TransferJob } from '../../src/protocol/domain'
 import { TunnelService } from '../../src/core/tunnels/tunnel-service'
+import { TelemetryService } from '../../src/core/telemetry/telemetry-service'
+import { BtopService } from '../../src/core/telemetry/btop-service'
 
 const host = process.env['REMOTEDECK_OPENSSH_HOST']
 const port = Number(process.env['REMOTEDECK_OPENSSH_PORT'])
@@ -144,6 +146,36 @@ describe('Docker OpenSSH password-to-key lifecycle', () => {
       await new Promise<void>((resolve) => target.close(() => resolve()))
     }
 
+    const collectorPath = resolve(import.meta.dirname, '../../../../packages/remote-collector/collector.py')
+    const telemetry = new TelemetryService(connections, () => Promise.resolve({ schemaVersion: 1, launchAtLogin: false, closeToTray: true, terminalFontFamily: 'monospace', terminalFontSize: 14, telemetryIntervalSeconds: 1, telemetryRetentionMinutes: 5, sshConfigPath: '', downloadDirectory: '', autoReconnect: true, logLevel: 'info', onboardingCompleted: true }), () => readFile(collectorPath, 'utf8'), pino({ enabled: false }))
+    const btop = new BtopService(connections, pino({ enabled: false }))
+    try {
+      await telemetry.start(profile.host.id)
+      await waitForTelemetry(telemetry, profile.host.id, (snapshot) => snapshot.cpu.perCorePercent.length > 0)
+      const firstTelemetry = telemetry.history(profile.host.id).at(-1)
+      expect(firstTelemetry).toMatchObject({ schemaVersion: 1, hostId: profile.host.id, currentUser: 'remotedeck', gpus: [], gpuProcesses: [] })
+      expect(firstTelemetry?.memory.totalBytes).toBeGreaterThan(0)
+      expect(firstTelemetry?.processes.length).toBeGreaterThan(0)
+
+      await expect(btop.probe(profile.host.id)).resolves.toMatchObject({ installed: true })
+      await expect(btop.start(profile.host.id, 5)).resolves.toMatchObject({ watchdogState: 'running' })
+      expect(btop.stop(profile.host.id).watchdogState).toBe('stopped')
+
+      const sleepResult = await execute(connections.getOnlineClient(profile.host.id), 'nohup sleep 60 >/dev/null 2>&1 & echo $!')
+      expect(sleepResult.code).toBe(0)
+      const sleepPid = Number(sleepResult.stdout.trim())
+      expect(Number.isInteger(sleepPid) && sleepPid > 0).toBe(true)
+      const sleepProcess = await waitForTelemetry(telemetry, profile.host.id, (snapshot) => snapshot.processes.some((item) => item.pid === sleepPid))
+      const processSnapshot = sleepProcess.processes.find((item) => item.pid === sleepPid)
+      if (!processSnapshot) throw new Error('Collector did not report the integration sleep process')
+      await expect(telemetry.signal({ hostId: profile.host.id, pid: sleepPid, signal: 'TERM', expectedUser: processSnapshot.user, expectedCommand: processSnapshot.command, confirmKill: false })).resolves.toMatchObject({ delivered: true, signal: 'TERM' })
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect((await execute(connections.getOnlineClient(profile.host.id), `kill -0 ${String(sleepPid)} 2>/dev/null`)).code).not.toBe(0)
+    } finally {
+      telemetry.stopAll()
+      btop.stopAll()
+    }
+
     terminals.closeAll()
     await connections.disconnectAll()
   })
@@ -155,6 +187,32 @@ async function waitForOutput(read: () => string, marker: string): Promise<void> 
     if (Date.now() >= deadline) throw new Error(`Timed out waiting for terminal marker ${marker}. Output: ${read().slice(-4000)}`)
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
+}
+
+async function waitForTelemetry(telemetry: TelemetryService, hostId: string, predicate: (snapshot: NonNullable<ReturnType<TelemetryService['history']>[number]>) => boolean): Promise<NonNullable<ReturnType<TelemetryService['history']>[number]>> {
+  const deadline = Date.now() + 15_000
+  for (;;) {
+    const snapshot = telemetry.history(hostId).at(-1)
+    if (snapshot && predicate(snapshot)) return snapshot
+    const status = telemetry.status(hostId)
+    if (status.state === 'dependency_missing' || status.state === 'failed') throw new Error(status.lastError ?? status.state)
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for telemetry: ${JSON.stringify(status)}`)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+}
+
+function execute(client: ReturnType<SshConnectionManager['getOnlineClient']>, command: string): Promise<{ stdout: string; stderr: string; code: number }> {
+  return new Promise((resolve, reject) => client.exec(command, (error, channel) => {
+    if (error) { reject(error); return }
+    let stdout = ''
+    let stderr = ''
+    channel.setEncoding('utf8')
+    channel.stderr.setEncoding('utf8')
+    channel.on('data', (chunk: string) => { stdout += chunk })
+    channel.stderr.on('data', (chunk: string) => { stderr += chunk })
+    channel.once('error', reject)
+    channel.once('close', (code?: number) => resolve({ stdout, stderr, code: code ?? 0 }))
+  }))
 }
 
 async function reservePort(): Promise<number> {

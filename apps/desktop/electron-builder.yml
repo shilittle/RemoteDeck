@@ -7,6 +7,9 @@ directories:
 files:
   - out/**/*
   - package.json
+extraResources:
+  - from: ../../packages/remote-collector/collector.py
+    to: remote-collector/collector.py
 afterPack: scripts/after-pack.cjs
 win:
   target:
@@ -19,4 +22,3 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   deleteAppDataOnUninstall: false
-

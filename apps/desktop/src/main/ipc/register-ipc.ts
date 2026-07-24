@@ -13,6 +13,8 @@ import type { SftpService } from '../../core/sftp/sftp-service'
 import type { TransferService } from '../../core/sftp/transfer-service'
 import type { TunnelService } from '../../core/tunnels/tunnel-service'
 import { detectClashCandidates } from '../../core/tunnels/clash-detector'
+import type { TelemetryService } from '../../core/telemetry/telemetry-service'
+import type { BtopService } from '../../core/telemetry/btop-service'
 import { IPC_CHANNELS } from '../../protocol/ipc'
 
 interface IpcDependencies {
@@ -27,12 +29,14 @@ interface IpcDependencies {
   sftp: SftpService
   transfers: TransferService
   tunnels: TunnelService
+  telemetry: TelemetryService
+  btop: BtopService
   logger: Logger
   appVersion: string
 }
 
 export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
-  const { ipcMain, window, settings, hosts, profiles, connections, keys, terminals, sftp, transfers, tunnels, logger, appVersion } = dependencies
+  const { ipcMain, window, settings, hosts, profiles, connections, keys, terminals, sftp, transfers, tunnels, telemetry, btop, logger, appVersion } = dependencies
   const channels: string[] = []
 
   register(ipcContracts.bootstrap, async () => ({
@@ -48,7 +52,12 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
   register(ipcContracts.settingsUpdate, (patch) => settings.update(patch))
   register(ipcContracts.hostsList, () => hosts.list())
   register(ipcContracts.hostsCreate, (request) => hosts.create(request))
-  register(ipcContracts.hostsUpdate, (request) => hosts.update(request))
+  register(ipcContracts.hostsUpdate, async (request) => {
+    const updated = await hosts.update(request)
+    if (request.patch.monitorEnabled === false) telemetry.stop(request.id)
+    else if (request.patch.monitorEnabled === true && connections.stateFor(request.id) === 'online') await telemetry.start(request.id)
+    return updated
+  })
   register(ipcContracts.hostsDelete, async (request) => ({ deleted: await hosts.delete(request.hostId) }))
   register(ipcContracts.hostsImport, (request) => hosts.importFile(request.configPath))
   register(ipcContracts.hostsTest, (request) => connections.test(request.hostId, request.credentials))
@@ -106,6 +115,14 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
   register(ipcContracts.tunnelsStop, (request) => tunnels.stop(request.tunnelId))
   register(ipcContracts.tunnelsRestart, (request) => tunnels.restart(request.tunnelId, request.credentials))
   register(ipcContracts.tunnelsDetectClash, () => detectClashCandidates())
+  register(ipcContracts.telemetryList, () => telemetry.list())
+  register(ipcContracts.telemetryHistory, (request) => telemetry.history(request.hostId))
+  register(ipcContracts.telemetryStart, (request) => telemetry.start(request.hostId))
+  register(ipcContracts.telemetryStop, (request) => telemetry.stop(request.hostId))
+  register(ipcContracts.telemetrySignal, (request) => telemetry.signal(request))
+  register(ipcContracts.btopProbe, (request) => btop.probe(request.hostId))
+  register(ipcContracts.btopWatchdogStart, (request) => btop.start(request.hostId, request.rotationMinutes))
+  register(ipcContracts.btopWatchdogStop, (request) => btop.stop(request.hostId))
 
   const onHostState = (snapshot: unknown): void => {
     if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.hostStateEvent, snapshot)
@@ -123,6 +140,11 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
     if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.tunnelEvent, event)
   }
   tunnels.on('event', onTunnelEvent)
+  const onTelemetryEvent = (event: unknown): void => {
+    if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.telemetryEvent, event)
+  }
+  telemetry.on('event', onTelemetryEvent)
+  btop.on('event', onTelemetryEvent)
 
   function register<TInput, TOutput>(
     contract: { channel: string; input: ZodType<TInput>; output: ZodType<TOutput> },
@@ -147,6 +169,8 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
     terminals.off('event', onTerminalEvent)
     transfers.off('event', onTransferEvent)
     tunnels.off('event', onTunnelEvent)
+    telemetry.off('event', onTelemetryEvent)
+    btop.off('event', onTelemetryEvent)
   }
 }
 

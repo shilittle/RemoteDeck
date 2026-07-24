@@ -160,7 +160,7 @@ export const transferJobSchema = z.object({
 
 const cpuSchema = z.object({
   totalPercent: z.number().min(0).max(100),
-  perCorePercent: z.array(z.number().min(0).max(100)),
+  perCorePercent: z.array(z.number().min(0).max(100)).min(1).max(1024),
   loadAverage: z.tuple([z.number(), z.number(), z.number()]),
   temperatureC: z.number().nullable()
 })
@@ -170,13 +170,14 @@ export const telemetrySnapshotSchema = z.object({
   hostId: entityIdSchema,
   capturedAt: timestampSchema,
   hostname: nonEmptyTextSchema,
+  currentUser: nonEmptyTextSchema,
   cpu: cpuSchema,
   memory: z.object({ totalBytes: z.number().int().nonnegative(), usedBytes: z.number().int().nonnegative(), swapTotalBytes: z.number().int().nonnegative(), swapUsedBytes: z.number().int().nonnegative() }),
   network: z.object({ receivedBytes: z.number().int().nonnegative(), sentBytes: z.number().int().nonnegative(), receiveBytesPerSecond: z.number().nonnegative(), sendBytesPerSecond: z.number().nonnegative() }),
-  disks: z.array(z.object({ mount: z.string(), totalBytes: z.number().int().nonnegative(), usedBytes: z.number().int().nonnegative(), availableBytes: z.number().int().nonnegative() })),
-  processes: z.array(z.object({ pid: z.number().int().positive(), ppid: z.number().int().nonnegative(), user: z.string(), cpuPercent: z.number().nonnegative(), memoryPercent: z.number().nonnegative(), state: z.string(), elapsed: z.string(), command: z.string() })),
-  gpus: z.array(z.object({ index: z.number().int().nonnegative(), name: z.string(), utilizationPercent: z.number().min(0).max(100), memoryUsedMiB: z.number().nonnegative(), memoryTotalMiB: z.number().nonnegative(), temperatureC: z.number().nullable(), powerW: z.number().nullable() })),
-  gpuProcesses: z.array(z.object({ gpuIndex: z.number().int().nonnegative(), pid: z.number().int().positive(), memoryUsedMiB: z.number().nonnegative() })),
+  disks: z.array(z.object({ mount: z.string().max(4096), totalBytes: z.number().int().nonnegative(), usedBytes: z.number().int().nonnegative(), availableBytes: z.number().int().nonnegative() })).max(512),
+  processes: z.array(z.object({ pid: z.number().int().positive(), ppid: z.number().int().nonnegative(), user: z.string().max(256), cpuPercent: z.number().nonnegative(), memoryPercent: z.number().nonnegative(), state: z.string().max(64), elapsed: z.string().max(64), command: z.string().max(32_768) })).max(2000),
+  gpus: z.array(z.object({ index: z.number().int().nonnegative(), name: z.string().max(512), utilizationPercent: z.number().min(0).max(100), memoryUsedMiB: z.number().nonnegative(), memoryTotalMiB: z.number().nonnegative(), temperatureC: z.number().nullable(), powerW: z.number().nullable() })).max(64),
+  gpuProcesses: z.array(z.object({ gpuIndex: z.number().int().nonnegative(), pid: z.number().int().positive(), memoryUsedMiB: z.number().nonnegative() })).max(10_000),
   uptimeSeconds: z.number().int().nonnegative()
 })
 

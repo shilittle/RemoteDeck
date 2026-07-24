@@ -46,6 +46,18 @@ describe('versioned domain schemas', () => {
 
   it('rejects telemetry without per-core samples', () => {
     expect(telemetrySnapshotSchema.safeParse({ schemaVersion: 1 }).success).toBe(false)
+    const base = {
+      schemaVersion: 1,
+      hostId: '019f92f0-b87c-7c74-a668-54d5b18fb487',
+      capturedAt: timestamp,
+      hostname: 'linux',
+      currentUser: 'developer',
+      cpu: { totalPercent: 1, perCorePercent: [], loadAverage: [0, 0, 0], temperatureC: null },
+      memory: { totalBytes: 1, usedBytes: 0, swapTotalBytes: 0, swapUsedBytes: 0 },
+      network: { receivedBytes: 0, sentBytes: 0, receiveBytesPerSecond: 0, sendBytesPerSecond: 0 },
+      disks: [], processes: [], gpus: [], gpuProcesses: [], uptimeSeconds: 1
+    }
+    expect(telemetrySnapshotSchema.safeParse(base).success).toBe(false)
+    expect(telemetrySnapshotSchema.safeParse({ ...base, cpu: { ...base.cpu, perCorePercent: [1] } }).success).toBe(true)
   })
 })
-

@@ -95,6 +95,9 @@ test('real xterm PTY supports tabs, Unicode, Ctrl+C, search, resize, rename, and
     await expect.poll(() => resizeEvents).toBeGreaterThan(0)
     await window.getByRole('button', { name: '关闭终端 交互终端' }).click()
     await expect(window.getByRole('tab')).toHaveCount(1)
+    await window.getByRole('button', { name: '监控' }).click()
+    await expect(window.getByText('12.5%')).toBeVisible()
+    await expect(window.getByText('未检测到 NVIDIA GPU；监控已正常降级。')).toBeVisible()
   } finally {
     if (application) await application.close()
     await rm(userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
@@ -112,7 +115,13 @@ function configureClient(client: Connection): void {
       session.on('pty', (acceptPty) => acceptPty())
       session.on('window-change', () => { resizeEvents += 1 })
       session.on('sftp', (_acceptSftp, rejectSftp) => rejectSftp())
-      session.on('exec', (acceptExec) => { const stream = acceptExec(); stream.write('0 0'); stream.exit(0); stream.end() })
+      session.on('exec', (acceptExec, _rejectExec, info) => {
+        const stream = acceptExec()
+        if (info.command.includes('python3 -u -')) {
+          stream.resume()
+          stream.once('end', () => stream.write(`${JSON.stringify(telemetryPayload())}\n`))
+        } else { stream.write('0 0'); stream.exit(0); stream.end() }
+      })
       session.on('shell', (acceptShell) => {
         shellCount += 1
         const shellId = shellCount
@@ -129,4 +138,19 @@ function configureClient(client: Connection): void {
       })
     })
   })
+}
+
+function telemetryPayload(): Record<string, unknown> {
+  return {
+    schemaVersion: 1,
+    capturedAt: new Date().toISOString(),
+    hostname: 'e2e-linux',
+    currentUser: 'terminal-user',
+    cpu: { totalPercent: 12.5, perCorePercent: [10, 15], loadAverage: [0.1, 0.2, 0.3], temperatureC: null },
+    memory: { totalBytes: 1024, usedBytes: 512, swapTotalBytes: 0, swapUsedBytes: 0 },
+    network: { receivedBytes: 100, sentBytes: 50, receiveBytesPerSecond: 10, sendBytesPerSecond: 5 },
+    disks: [{ mount: '/', totalBytes: 1000, usedBytes: 400, availableBytes: 600 }],
+    processes: [{ pid: 42, ppid: 1, user: 'terminal-user', cpuPercent: 1, memoryPercent: 0.5, state: 'S', elapsed: '60', command: 'sleep 60' }],
+    gpus: [], gpuProcesses: [], uptimeSeconds: 100
+  }
 }

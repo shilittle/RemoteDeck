@@ -28,6 +28,7 @@ export const hostCreateRequestSchema = z.object({
   port: portSchema.default(22),
   username: nonEmptyTextSchema,
   groups: z.array(nonEmptyTextSchema).max(32).default([]),
+  monitorEnabled: z.boolean().optional(),
   jumpHostId: entityIdSchema.optional(),
   workspacePath: z.string().min(1).max(4096).optional(),
   auth: authInputSchema,

@@ -16,6 +16,8 @@ describe('host profile relationships', () => {
     const repository = new ProfileRepository(join(directory, 'profiles.json'))
     const gateway = await repository.create({ alias: 'gateway', hostname: 'gateway.test', port: 22, username: 'dev', groups: [], auth: { name: 'agent', method: 'agent', agent: 'windows_openssh' }, advanced })
     const worker = await repository.create({ alias: 'worker', hostname: 'worker.test', port: 22, username: 'dev', groups: [], jumpHostId: gateway.host.id, auth: { name: 'agent', method: 'agent', agent: 'windows_openssh' }, advanced })
+    expect(worker.host.monitorEnabled).toBe(true)
+    expect((await repository.update({ id: worker.host.id, patch: { monitorEnabled: false } })).host.monitorEnabled).toBe(false)
     await expect(repository.create({ alias: 'nested', hostname: 'nested.test', port: 22, username: 'dev', groups: [], jumpHostId: worker.host.id, auth: { name: 'agent', method: 'agent', agent: 'windows_openssh' }, advanced })).rejects.toThrow(/one ProxyJump level/)
     await expect(repository.update({ id: worker.host.id, patch: { jumpHostId: worker.host.id } })).rejects.toThrow(/itself/)
 

@@ -7,6 +7,7 @@ import { hostStateEventSchema } from '../protocol/ssh'
 import { terminalEventSchema } from '../protocol/terminal'
 import { transferEventSchema } from '../protocol/sftp'
 import { tunnelEventSchema } from '../protocol/tunnel'
+import { telemetryEventSchema } from '../protocol/telemetry'
 import { IPC_CHANNELS } from '../protocol/ipc'
 import { ipcContracts } from '../protocol/ipc'
 
@@ -106,6 +107,23 @@ const api: RemoteDeckApi = Object.freeze({
       const listener = (_event: IpcRendererEvent, raw: unknown): void => callback(tunnelEventSchema.parse(raw))
       ipcRenderer.on(IPC_CHANNELS.tunnelEvent, listener)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.tunnelEvent, listener)
+    }
+  }),
+  telemetry: Object.freeze({
+    list: () => invoke(ipcContracts.telemetryList, {}),
+    history: (hostId: string) => invoke(ipcContracts.telemetryHistory, { hostId }),
+    start: (hostId: string) => invoke(ipcContracts.telemetryStart, { hostId }),
+    stop: (hostId: string) => invoke(ipcContracts.telemetryStop, { hostId }),
+    signal: (request: Parameters<RemoteDeckApi['telemetry']['signal']>[0]) => invoke(ipcContracts.telemetrySignal, request),
+    btop: Object.freeze({
+      probe: (hostId: string) => invoke(ipcContracts.btopProbe, { hostId }),
+      startWatchdog: (request: Parameters<RemoteDeckApi['telemetry']['btop']['startWatchdog']>[0]) => invoke(ipcContracts.btopWatchdogStart, request),
+      stopWatchdog: (hostId: string) => invoke(ipcContracts.btopWatchdogStop, { hostId })
+    }),
+    onEvent: (callback: Parameters<RemoteDeckApi['telemetry']['onEvent']>[0]) => {
+      const listener = (_event: IpcRendererEvent, raw: unknown): void => callback(telemetryEventSchema.parse(raw))
+      ipcRenderer.on(IPC_CHANNELS.telemetryEvent, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.telemetryEvent, listener)
     }
   })
 })

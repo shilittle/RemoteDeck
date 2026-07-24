@@ -70,7 +70,7 @@ export class ProfileRepository {
         ...(fixedWorkspace ? { defaultWorkspaceId: fixedWorkspace.id } : {}),
         groups: request.groups,
         advanced: request.advanced,
-        monitorEnabled: true,
+        monitorEnabled: request.monitorEnabled ?? true,
         createdAt: now,
         updatedAt: now
       })
@@ -103,6 +103,7 @@ export class ProfileRepository {
         ...(patch.username !== undefined ? { username: patch.username } : {}),
         ...(patch.groups !== undefined ? { groups: patch.groups } : {}),
         ...(patch.advanced !== undefined ? { advanced: patch.advanced } : {}),
+        ...(patch.monitorEnabled !== undefined ? { monitorEnabled: patch.monitorEnabled } : {}),
         updatedAt: now
       }
       if (patch.jumpHostId === null) delete nextHostInput.jumpHostId

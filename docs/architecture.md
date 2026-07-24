@@ -11,5 +11,6 @@ The renderer invokes a fixed `v1:*` channel. The preload validates the outgoing 
 
 Configuration is a versioned JSON document under Electron `userData`. Writes are serialized, schema-checked, written to an owned temporary file, flushed, backed up, and atomically renamed. Invalid persisted data is never silently trusted.
 
-The main process is the sole producer of connection and tunnel state. Each SSH connection generation will own its resources and reject callbacks from stale generations. Terminal, SFTP, tunnel, telemetry, command, and Codex services are separate consumers of a connection manager, with tunnels using dedicated SSH clients.
+The main process is the sole producer of connection, tunnel, telemetry, and background-tool state. Each SSH or supervisor generation owns its resources and rejects callbacks from stale generations. Terminal, SFTP, tunnel, telemetry, command, and Codex services are separate consumers of a connection manager, with tunnels using dedicated SSH clients.
 
+The Python collector is a packaged resource outside the Electron bundle. Main streams it through an already authenticated SSH channel to `python3 -u -`; it is not installed remotely. Strict v1 JSONL is parsed in main, retained in a bounded in-memory history, then emitted over one named telemetry event. btop uses an independent PTY channel and is never treated as a structured data source. See `docs/monitoring.md`.

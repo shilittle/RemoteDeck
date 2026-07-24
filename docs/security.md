@@ -24,6 +24,8 @@ SFTP paths and entries cross fixed schemas; remote mutations never invoke a shel
 
 Tunnel profiles persist endpoints and health policy but never credentials. Each active tunnel owns its SSH connection, local listener or remote bind, streams, and timers. Cleanup closes only those resources; ordinary port conflicts cannot trigger process termination. Clash/Mihomo discovery is read-only and requires the user to select a candidate. The optional legacy remote cleanup hook is disabled by default, stores the exact visible command and an explicit authorization flag, runs only after a bind failure, and emits an audit log entry. See `docs/tunnels.md`.
 
+Telemetry is read-only until the user explicitly selects an owned process and requests a signal. Collector output is size-bounded and schema-validated before it reaches the renderer. SIGTERM/SIGKILL use fixed commands with a numeric PID only after both the newest snapshot and a fresh remote `ps` query match the current SSH user and full command. SIGKILL also requires a recent matching SIGTERM plus a second confirmation. Commands are never taken from collector text. The packaged collector is streamed over stdin and does not create a persistent remote file. btop output is discarded rather than parsed or logged. See `docs/monitoring.md`.
+
 ## Trust boundaries still requiring user action
 
 RemoteDeck cannot decide whether an unknown host key belongs to the intended server, provide a user's SSH secret, authorize a code-signing identity, or perform a real Codex account login. Those actions require explicit user confirmation or input; tests use local SSH fixtures and mocked external account boundaries.

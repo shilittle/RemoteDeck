@@ -1,6 +1,6 @@
 FROM alpine:3.22
 
-RUN apk add --no-cache bash btop openssh python3 tmux vim \
+RUN apk add --no-cache bash btop openssh procps python3 tmux vim \
     && adduser -D -s /bin/bash remotedeck \
     && echo 'remotedeck:remotedeck-test-only' | chpasswd \
     && ssh-keygen -A \

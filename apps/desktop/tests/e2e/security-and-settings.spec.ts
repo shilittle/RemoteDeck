@@ -25,7 +25,7 @@ test('renderer is sandboxed and settings round-trip through validated IPC', asyn
         nodeGlobalPresent: 'process' in globalThis,
         apiKeys: Object.keys((globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck).sort()
       }))
-      expect(boundary).toEqual({ nodeGlobalPresent: false, apiKeys: ['app', 'hostKeys', 'hosts', 'keys', 'settings', 'sftp', 'terminals', 'tunnels'] })
+      expect(boundary).toEqual({ nodeGlobalPresent: false, apiKeys: ['app', 'hostKeys', 'hosts', 'keys', 'settings', 'sftp', 'telemetry', 'terminals', 'tunnels'] })
       await firstWindow.evaluate(() => (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck.settings.update({ terminalFontSize: 17 }))
       const sshConfigPath = join(userData, '.ssh', 'config')
       await firstWindow.evaluate((configPath) => (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck.settings.update({ sshConfigPath: configPath }), sshConfigPath)
@@ -48,6 +48,9 @@ test('renderer is sandboxed and settings round-trip through validated IPC', asyn
       await firstWindow.getByRole('button', { name: '保存配置' }).click()
       await expect(firstWindow.getByRole('heading', { name: 'e2e-local-forward' })).toBeVisible()
       expect(await firstWindow.evaluate(() => (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck.tunnels.list())).toHaveLength(1)
+      await firstWindow.getByRole('button', { name: '监控' }).click()
+      await expect(firstWindow.getByRole('heading', { name: '系统监控' })).toBeVisible()
+      await expect(firstWindow.getByText('collector v1 JSONL', { exact: false })).toBeVisible()
     })
   } finally {
     if (application) await test.step('close Electron', () => application?.close())

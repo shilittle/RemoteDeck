@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { app, BrowserWindow, ipcMain, powerMonitor, session } from 'electron'
 import { SettingsService } from '../core/settings-service'
 import { HostService } from '../core/hosts/host-service'
@@ -10,6 +11,9 @@ import { TerminalService } from '../core/terminal/terminal-service'
 import { SftpService } from '../core/sftp/sftp-service'
 import { TransferService } from '../core/sftp/transfer-service'
 import { TunnelService } from '../core/tunnels/tunnel-service'
+import { TelemetryService } from '../core/telemetry/telemetry-service'
+import { BtopService } from '../core/telemetry/btop-service'
+import type { ConnectionSnapshot } from '../protocol/ssh'
 import { registerIpcHandlers } from './ipc/register-ipc'
 import { categoryLogger, createAppLogger } from './logging/logger'
 import { hardenWindow, installSessionSecurity, secureWindowOptions } from './security/window-security'
@@ -59,9 +63,26 @@ if (!app.requestSingleInstanceLock()) {
     const transfers = new TransferService(sftp)
     const mainLogger = categoryLogger(logger, 'main')
     const tunnels = new TunnelService(profiles, connections, mainLogger)
+    const collectorPath = app.isPackaged ? join(process.resourcesPath, 'remote-collector', 'collector.py') : join(app.getAppPath(), '..', '..', 'packages', 'remote-collector', 'collector.py')
+    const telemetry = new TelemetryService(connections, () => settings.get(), () => readFile(collectorPath, 'utf8'), mainLogger)
+    const btop = new BtopService(connections, mainLogger)
+    const onConnectionState = (snapshot: ConnectionSnapshot): void => {
+      if (snapshot.state === 'online') {
+        telemetry.wake(snapshot.hostId)
+        btop.wake(snapshot.hostId)
+        void profiles.get(snapshot.hostId).then((profile) => { if (profile.host.monitorEnabled && telemetry.status(snapshot.hostId).state === 'stopped') void telemetry.start(snapshot.hostId) }).catch(() => undefined)
+      } else if (snapshot.state === 'idle') {
+        telemetry.stop(snapshot.hostId)
+        btop.stop(snapshot.hostId)
+      } else if (snapshot.state === 'offline' || snapshot.state === 'failed') {
+        telemetry.networkOffline(snapshot.hostId)
+        btop.networkOffline(snapshot.hostId)
+      }
+    }
+    connections.on('state', onConnectionState)
     mainWindow = createWindow()
-    const ipcDependencies = { ipcMain, settings, hosts, profiles, connections, keys, terminals, sftp, transfers, tunnels, logger: mainLogger, appVersion: app.getVersion() }
-    disposeRuntime = () => { transfers.cancelAll(); terminals.closeAll(); void tunnels.stopAll(); void connections.disconnectAll() }
+    const ipcDependencies = { ipcMain, settings, hosts, profiles, connections, keys, terminals, sftp, transfers, tunnels, telemetry, btop, logger: mainLogger, appVersion: app.getVersion() }
+    disposeRuntime = () => { connections.off('state', onConnectionState); transfers.cancelAll(); terminals.closeAll(); telemetry.stopAll(); btop.stopAll(); void tunnels.stopAll(); void connections.disconnectAll() }
     disposeIpc = registerIpcHandlers({ ...ipcDependencies, window: mainWindow })
     mainWindow.on('closed', () => { mainWindow = null })
     app.on('activate', () => {
@@ -71,8 +92,8 @@ if (!app.requestSingleInstanceLock()) {
         disposeIpc = registerIpcHandlers({ ...ipcDependencies, window: mainWindow })
       }
     })
-    powerMonitor.on('suspend', () => { void tunnels.suspend() })
-    powerMonitor.on('resume', () => { tunnels.resume() })
+    powerMonitor.on('suspend', () => { telemetry.suspend(); btop.suspend(); void tunnels.suspend() })
+    powerMonitor.on('resume', () => { telemetry.resume(); btop.resume(); tunnels.resume() })
     void tunnels.restoreAutoStart()
     logger.info({ development }, 'RemoteDeck started')
   })

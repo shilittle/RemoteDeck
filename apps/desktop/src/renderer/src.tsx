@@ -1,6 +1,6 @@
 import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Command, Files, HardDrive, MonitorCog, Save, Server, Settings, TerminalSquare } from 'lucide-react'
+import { ChartNoAxesCombined, Command, Files, HardDrive, MonitorCog, Save, Server, Settings, TerminalSquare } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AppSettingsPatch } from '../protocol/settings'
 import { type Activity, useAppStore } from './store'
@@ -9,6 +9,7 @@ import { HostPanel } from './features/hosts/HostPanel'
 import { TerminalWorkspace } from './features/terminal/TerminalWorkspace'
 import { FilePanel } from './features/files/FilePanel'
 import { TunnelPanel } from './features/tunnels/TunnelPanel'
+import { TelemetryPanel } from './features/telemetry/TelemetryPanel'
 import './styles.css'
 
 const activities: Array<{ id: Activity; label: string; icon: LucideIcon }> = [
@@ -16,6 +17,7 @@ const activities: Array<{ id: Activity; label: string; icon: LucideIcon }> = [
   { id: 'terminal', label: '终端', icon: TerminalSquare },
   { id: 'files', label: '文件', icon: Files },
   { id: 'tunnels', label: '隧道', icon: HardDrive },
+  { id: 'monitor', label: '监控', icon: ChartNoAxesCombined },
   { id: 'commands', label: '命令', icon: Command },
   { id: 'settings', label: '设置', icon: Settings }
 ]
@@ -72,7 +74,7 @@ function SidebarContent({ activity }: { activity: Activity }): React.JSX.Element
   if (activity === 'settings') return <p className="sidebar-copy">应用与连接默认行为</p>
   if (activity === 'terminal') return <p className="sidebar-copy">终端使用当前选中的在线主机。切换主机后可新建另一标签。</p>
   if (activity === 'hosts') return hosts.length === 0 ? <p className="sidebar-copy">暂无主机。可在主工作区添加或导入。</p> : <><input className="sidebar-search" aria-label="搜索主机" placeholder="搜索主机或分组" value={hostSearch} onChange={(event) => setHostSearch(event.target.value)} /><div className="host-list">{hosts.filter((item) => `${item.host.alias} ${item.host.hostname} ${item.host.groups.join(' ')}`.toLowerCase().includes(hostSearch.toLowerCase())).map((item) => <button key={item.host.id} className={selectedId === item.host.id ? 'host-list-item selected' : 'host-list-item'} onClick={() => select(item.host.id)}><span className={`status-dot status-${item.state}`} /><span><strong>{item.host.alias}</strong><small>{item.host.groups.length > 0 ? item.host.groups.join(' · ') : item.host.hostname}</small></span></button>)}</div></>
-  return <p className="sidebar-copy">选择并连接主机后，可在此访问{activity === 'files' ? '远程文件' : activity === 'tunnels' ? '端口隧道' : '命令预设'}。</p>
+  return <p className="sidebar-copy">选择并连接主机后，可在此访问{activity === 'files' ? '远程文件' : activity === 'tunnels' ? '端口隧道' : activity === 'monitor' ? '结构化遥测与进程' : '命令预设'}。</p>
 }
 
 function WorkspaceContent({ activity }: { activity: Activity }): React.JSX.Element {
@@ -82,6 +84,7 @@ function WorkspaceContent({ activity }: { activity: Activity }): React.JSX.Eleme
   if (activity === 'terminal') return <TerminalWorkspace hidden={false} />
   if (activity === 'files') return <FilePanel />
   if (activity === 'tunnels') return <TunnelPanel />
+  if (activity === 'monitor') return <TelemetryPanel />
   const copy = {
     commands: ['命令预设', '连接主机后可执行带风险分级和确认策略的命令。']
   }[activity]
