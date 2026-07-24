@@ -11,7 +11,7 @@ Audit date: 2026-07-24. Scope: Electron process boundaries, IPC, SSH trust/authe
 - Files/resources: local paths originate from system pickers/drop handles; SFTP does not shell-quote paths; recursive deletion does not follow symlinks; job-owned temporary paths and channels bound cleanup.
 - Execution: process signals revalidate user/PID/command; command risk is reclassified in main and cannot be lowered by imported legacy rules; legacy cleanup is disabled unless explicitly authorized; Codex uses fixed CLI operations and normal SSH PTYs.
 - Logging/diagnostics: six structured categories are available; launch-segmented log files retain the newest 20. Recursive key/text redaction covers passwords, passphrases, authorization, private keys, URL credentials and OpenAI-style tokens. Diagnostics use anonymous summaries, bounded logs and a second whole-entry scan.
-- Supply chain: lockfile installation is frozen; packaged Electron is taken from the exact local pnpm dependency; `pnpm audit --audit-level high` reported no known vulnerabilities at audit time. CI receives no application secrets.
+- Supply chain: lockfile installation is frozen; pnpm permits build scripts only for the pinned Electron/esbuild/ssh2 toolchain entries listed in the root manifest; packaged Electron is taken from that exact local pnpm dependency; `pnpm audit --audit-level high` reported no known vulnerabilities at audit time. CI receives no application secrets.
 
 ## Findings closed during M9
 

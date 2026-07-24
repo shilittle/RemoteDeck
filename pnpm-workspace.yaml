@@ -3,12 +3,8 @@ packages:
   - packages/*
 
 allowBuilds:
-  cpu-features: set this to true or false
-  ssh2: set this to true or false
-
-onlyBuiltDependencies:
-  - electron
-  - electron-winstaller
-  - esbuild
-  - cpu-features
-  - ssh2
+  cpu-features: true
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+  ssh2: true
