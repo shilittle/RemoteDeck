@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, codex/remotedeck-v1]
+    branches: [main]
   pull_request:
 
 permissions:

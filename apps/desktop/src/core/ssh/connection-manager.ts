@@ -280,7 +280,7 @@ async function probeCapabilities(client: SshClient, workspace?: string): Promise
   const [shell, sftp, dependency] = await Promise.all([
     new Promise<boolean>((resolve) => client.shell({ term: 'xterm-256color', cols: 80, rows: 24 }, (error, stream) => { if (!error) stream.end(); resolve(!error) })),
     new Promise<boolean>((resolve) => client.sftp((error, channel) => { if (!error) channel.end(); resolve(!error) })),
-    execText(client, `command -v python3 >/dev/null 2>&1; py=$?; ${workspace && workspace !== '~' ? `test -w -- ${shellQuote(workspace)}` : 'test -w -- "$HOME"'}; wr=$?; printf '%s %s' "$py" "$wr"`)
+    execText(client, `command -v python3 >/dev/null 2>&1; py=$?; ${workspace && workspace !== '~' ? `test -w ${shellQuote(workspace)}` : 'test -w "$HOME"'}; wr=$?; printf '%s %s' "$py" "$wr"`)
   ])
   const [pythonCode, writableCode] = dependency.trim().split(/\s+/).map(Number)
   return { shell, sftp, python3: pythonCode === 0, writableWorkspace: writableCode === 0 }
