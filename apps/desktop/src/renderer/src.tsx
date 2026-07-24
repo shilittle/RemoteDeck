@@ -10,6 +10,7 @@ import { TerminalWorkspace } from './features/terminal/TerminalWorkspace'
 import { FilePanel } from './features/files/FilePanel'
 import { TunnelPanel } from './features/tunnels/TunnelPanel'
 import { TelemetryPanel } from './features/telemetry/TelemetryPanel'
+import { CommandPanel } from './features/commands/CommandPanel'
 import './styles.css'
 
 const activities: Array<{ id: Activity; label: string; icon: LucideIcon }> = [
@@ -78,24 +79,13 @@ function SidebarContent({ activity }: { activity: Activity }): React.JSX.Element
 }
 
 function WorkspaceContent({ activity }: { activity: Activity }): React.JSX.Element {
-  const setActivity = useAppStore((state) => state.setActivity)
   if (activity === 'settings') return <SettingsPanel />
   if (activity === 'hosts') return <HostPanel />
   if (activity === 'terminal') return <TerminalWorkspace hidden={false} />
   if (activity === 'files') return <FilePanel />
   if (activity === 'tunnels') return <TunnelPanel />
   if (activity === 'monitor') return <TelemetryPanel />
-  const copy = {
-    commands: ['命令预设', '连接主机后可执行带风险分级和确认策略的命令。']
-  }[activity]
-  return (
-    <section className="empty-state">
-      <TerminalSquare size={42} strokeWidth={1.35} />
-      <h1>{copy[0]}</h1>
-      <p>{copy[1]}</p>
-      <button className="primary" onClick={() => setActivity('hosts')}>返回主机</button>
-    </section>
-  )
+  return <CommandPanel />
 }
 
 function SettingsPanel(): React.JSX.Element {

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import type { AuthProfile, HostKeyRecord, HostProfile, TunnelProfile, WorkspaceProfile } from '../../protocol/domain'
-import { authProfileSchema, hostKeyRecordSchema, hostProfileSchema, tunnelProfileSchema, workspaceProfileSchema } from '../../protocol/domain'
+import type { AuthProfile, CommandPreset, HostKeyRecord, HostProfile, TunnelProfile, WorkspaceProfile } from '../../protocol/domain'
+import { authProfileSchema, commandPresetSchema, hostKeyRecordSchema, hostProfileSchema, tunnelProfileSchema, workspaceProfileSchema } from '../../protocol/domain'
+import type { CommandPresetInput } from '../../protocol/command'
 import type { HostCreateRequest, HostUpdateRequest } from '../../protocol/ssh'
 import type { PrivateKeyMetadata } from '../../protocol/ssh'
 import { privateKeyMetadataSchema } from '../../protocol/ssh'
@@ -14,12 +15,13 @@ const profileDatabaseSchema = z.object({
   workspaces: z.array(workspaceProfileSchema),
   hostKeys: z.array(hostKeyRecordSchema),
   tunnels: z.array(tunnelProfileSchema).default([]),
+  commands: z.array(commandPresetSchema).default([]),
   privateKeys: z.array(privateKeyMetadataSchema).default([]),
   imports: z.array(z.object({ sourceHash: z.string().regex(/^[a-f0-9]{64}$/), unsupported: z.array(z.object({ alias: z.string(), lines: z.array(z.string()) })) })).default([])
 })
 
 type ProfileDatabase = z.infer<typeof profileDatabaseSchema>
-const defaults: ProfileDatabase = { schemaVersion: 1, hosts: [], authProfiles: [], workspaces: [], hostKeys: [], tunnels: [], privateKeys: [], imports: [] }
+const defaults: ProfileDatabase = { schemaVersion: 1, hosts: [], authProfiles: [], workspaces: [], hostKeys: [], tunnels: [], commands: [], privateKeys: [], imports: [] }
 
 export interface ResolvedHostProfile {
   host: HostProfile
@@ -150,7 +152,8 @@ export class ProfileRepository {
         ...data,
         hosts: remainingHosts,
         authProfiles: data.authProfiles.filter((item) => item.id !== host.authProfileId),
-        workspaces: data.workspaces.filter((item) => item.hostId !== hostId)
+        workspaces: data.workspaces.filter((item) => item.hostId !== hostId),
+        commands: data.commands.filter((item) => item.hostId !== hostId)
       }
     })
     return deleted
@@ -231,6 +234,50 @@ export class ProfileRepository {
 
   async listPrivateKeyMetadata(): Promise<PrivateKeyMetadata[]> {
     return (await this.#store.load()).privateKeys
+  }
+
+  async listCommands(hostId?: string): Promise<CommandPreset[]> {
+    const commands = (await this.#store.load()).commands
+    return commands.filter((item) => item.hostId === undefined || item.hostId === hostId).sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name))
+  }
+
+  async getCommand(commandId: string): Promise<CommandPreset> {
+    const command = (await this.#store.load()).commands.find((item) => item.id === commandId)
+    if (!command) throw new Error(`Unknown command preset: ${commandId}`)
+    return command
+  }
+
+  async addCommand(input: CommandPresetInput): Promise<CommandPreset> {
+    if (input.hostId) await this.get(input.hostId)
+    const now = new Date().toISOString()
+    const command = commandPresetSchema.parse({ schemaVersion: 1, id: randomUUID(), ...input, createdAt: now, updatedAt: now })
+    await this.#store.update((data) => ({ ...data, commands: [...data.commands, command] }))
+    return command
+  }
+
+  async updateCommand(commandId: string, patch: Partial<CommandPresetInput>): Promise<CommandPreset> {
+    let updated: CommandPreset | undefined
+    await this.#store.update((data) => {
+      const index = data.commands.findIndex((item) => item.id === commandId)
+      const current = data.commands[index]
+      if (!current) throw new Error(`Unknown command preset: ${commandId}`)
+      const next = commandPresetSchema.parse({ ...current, ...patch, updatedAt: new Date().toISOString() })
+      if (next.hostId && !data.hosts.some((item) => item.id === next.hostId)) throw new Error(`Unknown host profile: ${next.hostId}`)
+      updated = next
+      return { ...data, commands: data.commands.with(index, next) }
+    })
+    if (!updated) throw new Error('Command preset update failed')
+    return updated
+  }
+
+  async deleteCommand(commandId: string): Promise<boolean> {
+    let deleted = false
+    await this.#store.update((data) => {
+      const commands = data.commands.filter((item) => item.id !== commandId)
+      deleted = commands.length !== data.commands.length
+      return { ...data, commands }
+    })
+    return deleted
   }
 }
 

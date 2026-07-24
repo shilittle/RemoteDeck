@@ -1,6 +1,9 @@
 FROM alpine:3.22
 
+COPY codex /usr/local/bin/codex
+
 RUN apk add --no-cache bash btop openssh procps python3 tmux vim \
+    && chmod 0755 /usr/local/bin/codex \
     && adduser -D -s /bin/bash remotedeck \
     && echo 'remotedeck:remotedeck-test-only' | chpasswd \
     && ssh-keygen -A \

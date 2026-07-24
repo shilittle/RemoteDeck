@@ -15,6 +15,8 @@ import type { TunnelService } from '../../core/tunnels/tunnel-service'
 import { detectClashCandidates } from '../../core/tunnels/clash-detector'
 import type { TelemetryService } from '../../core/telemetry/telemetry-service'
 import type { BtopService } from '../../core/telemetry/btop-service'
+import type { CommandService } from '../../core/commands/command-service'
+import type { CodexService } from '../../core/commands/codex-service'
 import { IPC_CHANNELS } from '../../protocol/ipc'
 
 interface IpcDependencies {
@@ -31,12 +33,14 @@ interface IpcDependencies {
   tunnels: TunnelService
   telemetry: TelemetryService
   btop: BtopService
+  commands: CommandService
+  codex: CodexService
   logger: Logger
   appVersion: string
 }
 
 export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
-  const { ipcMain, window, settings, hosts, profiles, connections, keys, terminals, sftp, transfers, tunnels, telemetry, btop, logger, appVersion } = dependencies
+  const { ipcMain, window, settings, hosts, profiles, connections, keys, terminals, sftp, transfers, tunnels, telemetry, btop, commands, codex, logger, appVersion } = dependencies
   const channels: string[] = []
 
   register(ipcContracts.bootstrap, async () => ({
@@ -123,6 +127,17 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
   register(ipcContracts.btopProbe, (request) => btop.probe(request.hostId))
   register(ipcContracts.btopWatchdogStart, (request) => btop.start(request.hostId, request.rotationMinutes))
   register(ipcContracts.btopWatchdogStop, (request) => btop.stop(request.hostId))
+  register(ipcContracts.commandsList, (request) => commands.list(request.hostId))
+  register(ipcContracts.commandsCreate, (request) => commands.create(request))
+  register(ipcContracts.commandsUpdate, (request) => commands.update(request.id, request.patch))
+  register(ipcContracts.commandsDelete, async (request) => ({ deleted: await commands.delete(request.presetId) }))
+  register(ipcContracts.commandsAnalyze, (request) => commands.analyze(request.hostId, request.presetId))
+  register(ipcContracts.commandsRun, (request) => commands.run(request))
+  register(ipcContracts.commandsJobs, () => commands.listJobs())
+  register(ipcContracts.commandsCancel, (request) => commands.cancel(request.jobId))
+  register(ipcContracts.codexInstallPlan, () => codex.installPlan())
+  register(ipcContracts.codexProbe, (request) => codex.probe(request.hostId))
+  register(ipcContracts.codexAction, (request) => codex.action(request))
 
   const onHostState = (snapshot: unknown): void => {
     if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.hostStateEvent, snapshot)
@@ -145,6 +160,10 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
   }
   telemetry.on('event', onTelemetryEvent)
   btop.on('event', onTelemetryEvent)
+  const onCommandEvent = (event: unknown): void => {
+    if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.commandEvent, event)
+  }
+  commands.on('event', onCommandEvent)
 
   function register<TInput, TOutput>(
     contract: { channel: string; input: ZodType<TInput>; output: ZodType<TOutput> },
@@ -171,6 +190,7 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
     tunnels.off('event', onTunnelEvent)
     telemetry.off('event', onTelemetryEvent)
     btop.off('event', onTelemetryEvent)
+    commands.off('event', onCommandEvent)
   }
 }
 

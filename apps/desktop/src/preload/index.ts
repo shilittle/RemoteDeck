@@ -8,6 +8,7 @@ import { terminalEventSchema } from '../protocol/terminal'
 import { transferEventSchema } from '../protocol/sftp'
 import { tunnelEventSchema } from '../protocol/tunnel'
 import { telemetryEventSchema } from '../protocol/telemetry'
+import { commandEventSchema } from '../protocol/command'
 import { IPC_CHANNELS } from '../protocol/ipc'
 import { ipcContracts } from '../protocol/ipc'
 
@@ -125,6 +126,26 @@ const api: RemoteDeckApi = Object.freeze({
       ipcRenderer.on(IPC_CHANNELS.telemetryEvent, listener)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.telemetryEvent, listener)
     }
+  }),
+  commands: Object.freeze({
+    list: (hostId: string) => invoke(ipcContracts.commandsList, { hostId }),
+    create: (request: Parameters<RemoteDeckApi['commands']['create']>[0]) => invoke(ipcContracts.commandsCreate, request),
+    update: (request: Parameters<RemoteDeckApi['commands']['update']>[0]) => invoke(ipcContracts.commandsUpdate, request),
+    delete: (presetId: string) => invoke(ipcContracts.commandsDelete, { presetId }),
+    analyze: (hostId: string, presetId: string) => invoke(ipcContracts.commandsAnalyze, { hostId, presetId }),
+    run: (request: Parameters<RemoteDeckApi['commands']['run']>[0]) => invoke(ipcContracts.commandsRun, request),
+    jobs: () => invoke(ipcContracts.commandsJobs, {}),
+    cancel: (jobId: string) => invoke(ipcContracts.commandsCancel, { jobId }),
+    onEvent: (callback: Parameters<RemoteDeckApi['commands']['onEvent']>[0]) => {
+      const listener = (_event: IpcRendererEvent, raw: unknown): void => callback(commandEventSchema.parse(raw))
+      ipcRenderer.on(IPC_CHANNELS.commandEvent, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.commandEvent, listener)
+    }
+  }),
+  codex: Object.freeze({
+    installPlan: () => invoke(ipcContracts.codexInstallPlan, {}),
+    probe: (hostId: string) => invoke(ipcContracts.codexProbe, { hostId }),
+    action: (request: Parameters<RemoteDeckApi['codex']['action']>[0]) => invoke(ipcContracts.codexAction, request)
   })
 })
 

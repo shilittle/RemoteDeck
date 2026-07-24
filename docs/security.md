@@ -26,6 +26,10 @@ Tunnel profiles persist endpoints and health policy but never credentials. Each 
 
 Telemetry is read-only until the user explicitly selects an owned process and requests a signal. Collector output is size-bounded and schema-validated before it reaches the renderer. SIGTERM/SIGKILL use fixed commands with a numeric PID only after both the newest snapshot and a fresh remote `ps` query match the current SSH user and full command. SIGKILL also requires a recent matching SIGTERM plus a second confirmation. Commands are never taken from collector text. The packaged collector is streamed over stdin and does not create a persistent remote file. btop output is discarded rather than parsed or logged. See `docs/monitoring.md`.
 
+Command presets are reloaded and classified in main at run time. Declared risk is a floor: readonly allowlisting may keep L0, unknown or mutating commands become at least L1, and destructive patterns become L2. L1 requires an affirmative confirmation after displaying the final command/target; L2 additionally requires exact typed text. Each non-PTY job owns one SSH exec channel, and cancellation cannot close another job or terminal. Free terminal input is deliberately outside this best-effort classifier. See `docs/commands-codex.md`.
+
+Codex integration executes fixed probes and version-advertised stable CLI commands only. The official installer/update fallback is immutable and main requires explicit confirmation. RemoteDeck never requests a key/token, reads `auth.json`, parses TUI bytes, or supplies a sandbox-bypass flag. Login and all interactive Codex modes run in the normal SSH PTY; tmux persistence uses a deterministic app-owned session name.
+
 ## Trust boundaries still requiring user action
 
 RemoteDeck cannot decide whether an unknown host key belongs to the intended server, provide a user's SSH secret, authorize a code-signing identity, or perform a real Codex account login. Those actions require explicit user confirmation or input; tests use local SSH fixtures and mocked external account boundaries.

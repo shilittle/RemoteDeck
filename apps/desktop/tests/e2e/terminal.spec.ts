@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test } from '@playwright/test'
 import type { ElectronApplication } from '@playwright/test'
+import type { RemoteDeckApi } from '../../src/protocol/ipc'
 import ssh2 from 'ssh2'
 import type { Connection, Server as SshServer } from 'ssh2'
 
@@ -98,6 +99,20 @@ test('real xterm PTY supports tabs, Unicode, Ctrl+C, search, resize, rename, and
     await window.getByRole('button', { name: '监控' }).click()
     await expect(window.getByText('12.5%')).toBeVisible()
     await expect(window.getByText('未检测到 NVIDIA GPU；监控已正常降级。')).toBeVisible()
+    const activeHost = await window.evaluate(async () => (await (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck.hosts.list())[0]?.host.id)
+    if (!activeHost) throw new Error('Missing E2E host for command test')
+    await window.evaluate(async ({ hostId }) => (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck.commands.create({ hostId, name: 'E2E 高风险命令', description: '验证 L2 主进程确认', group: 'E2E', command: 'rm -rf /tmp/remotedeck-e2e-never-created', risk: 'L0', requiresPty: false, requiresSudo: false, sortOrder: 1 }), { hostId: activeHost })
+    await window.locator('.activity[aria-label="命令"]').click()
+    const commandCard = window.locator('.command-card').filter({ hasText: 'E2E 高风险命令' })
+    await commandCard.getByRole('button', { name: '运行' }).click()
+    await expect(window.getByRole('heading', { name: '确认 L2 命令' })).toBeVisible()
+    const confirmInput = window.locator('.command-modal input')
+    await confirmInput.fill('wrong')
+    await expect(window.getByRole('button', { name: '确认执行' })).toBeDisabled()
+    await confirmInput.fill('pty-e2e')
+    await window.getByRole('button', { name: '确认执行' }).click()
+    await expect.poll(async () => window.locator('.command-jobs').innerText()).toContain('COMMAND_E2E_OK')
+    await expect(window.getByText('未安装', { exact: true })).toBeVisible()
   } finally {
     if (application) await application.close()
     await rm(userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
@@ -120,7 +135,9 @@ function configureClient(client: Connection): void {
         if (info.command.includes('python3 -u -')) {
           stream.resume()
           stream.once('end', () => stream.write(`${JSON.stringify(telemetryPayload())}\n`))
-        } else { stream.write('0 0'); stream.exit(0); stream.end() }
+        } else if (info.command.includes('command -v codex')) { stream.exit(0); stream.end() }
+        else if (info.command.includes('remotedeck-e2e-never-created')) { stream.write('COMMAND_E2E_OK\n'); stream.exit(0); stream.end() }
+        else { stream.write('0 0'); stream.exit(0); stream.end() }
       })
       session.on('shell', (acceptShell) => {
         shellCount += 1

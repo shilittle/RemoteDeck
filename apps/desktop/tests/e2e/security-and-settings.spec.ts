@@ -25,7 +25,7 @@ test('renderer is sandboxed and settings round-trip through validated IPC', asyn
         nodeGlobalPresent: 'process' in globalThis,
         apiKeys: Object.keys((globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck).sort()
       }))
-      expect(boundary).toEqual({ nodeGlobalPresent: false, apiKeys: ['app', 'hostKeys', 'hosts', 'keys', 'settings', 'sftp', 'telemetry', 'terminals', 'tunnels'] })
+      expect(boundary).toEqual({ nodeGlobalPresent: false, apiKeys: ['app', 'codex', 'commands', 'hostKeys', 'hosts', 'keys', 'settings', 'sftp', 'telemetry', 'terminals', 'tunnels'] })
       await firstWindow.evaluate(() => (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck.settings.update({ terminalFontSize: 17 }))
       const sshConfigPath = join(userData, '.ssh', 'config')
       await firstWindow.evaluate((configPath) => (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck.settings.update({ sshConfigPath: configPath }), sshConfigPath)
@@ -51,6 +51,23 @@ test('renderer is sandboxed and settings round-trip through validated IPC', asyn
       await firstWindow.getByRole('button', { name: '监控' }).click()
       await expect(firstWindow.getByRole('heading', { name: '系统监控' })).toBeVisible()
       await expect(firstWindow.getByText('collector v1 JSONL', { exact: false })).toBeVisible()
+      await firstWindow.locator('.activity[aria-label="命令"]').click()
+      await expect(firstWindow.getByRole('heading', { name: '命令与 Codex' })).toBeVisible()
+      await firstWindow.getByRole('button', { name: '新建预设' }).click()
+      const editor = firstWindow.locator('.preset-editor')
+      await editor.getByLabel('名称').fill('E2E 全局预设')
+      await editor.getByLabel('命令').fill('git status --short --branch')
+      await editor.getByLabel('风险').selectOption('L0')
+      await editor.getByText('全局预设').click()
+      await editor.getByRole('button', { name: '保存' }).click()
+      await expect(firstWindow.getByRole('heading', { name: 'E2E 全局预设' })).toBeVisible()
+      const savedCommands = await firstWindow.evaluate(async () => {
+        const api = (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck
+        const host = (await api.hosts.list())[0]
+        if (!host) throw new Error('Missing E2E host')
+        return api.commands.list(host.host.id)
+      })
+      expect(savedCommands.find((item) => item.name === 'E2E 全局预设')?.hostId).toBeUndefined()
     })
   } finally {
     if (application) await test.step('close Electron', () => application?.close())

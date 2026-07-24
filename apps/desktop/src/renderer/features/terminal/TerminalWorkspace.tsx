@@ -67,7 +67,7 @@ export function TerminalWorkspace({ hidden }: { hidden: boolean }): React.JSX.El
       generations.current.set(event.session.id, event.session.generation)
       setTabs((current) => {
         const existing = current.find((tab) => tab.id === event.session.id)
-        if (!existing) return [...current, { ...event.session, name: `${event.session.hostAlias} shell ${String(current.length + 1)}` }]
+        if (!existing) { setActiveId(event.session.id); return [...current, { ...event.session, name: `${event.session.hostAlias} shell ${String(current.length + 1)}` }] }
         return current.map((tab) => tab.id === event.session.id ? { ...event.session, name: tab.name } : tab)
       })
     })

@@ -37,4 +37,18 @@ describe('host profile relationships', () => {
     const updated = await repository.update({ id: worker.host.id, patch: { jumpHostId: null } })
     expect(updated.host.jumpHostId).toBeUndefined()
   })
+
+  it('persists global and host command presets and removes host-scoped commands with the host', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'remotedeck-profiles-commands-'))
+    directories.push(directory)
+    const repository = new ProfileRepository(join(directory, 'profiles.json'))
+    const host = await repository.create({ alias: 'worker', hostname: 'worker.test', port: 22, username: 'dev', groups: [], auth: { name: 'agent', method: 'agent', agent: 'windows_openssh' }, advanced })
+    const global = await repository.addCommand({ name: 'Global', description: '', group: 'dev', command: 'git status', risk: 'L0', requiresPty: false, requiresSudo: false, sortOrder: 2 })
+    const scoped = await repository.addCommand({ hostId: host.host.id, name: 'Scoped', description: '', group: 'ops', command: 'uptime', risk: 'L0', requiresPty: false, requiresSudo: false, sortOrder: 1 })
+    expect((await repository.listCommands(host.host.id)).map((item) => item.id)).toEqual([scoped.id, global.id])
+    expect((await repository.updateCommand(scoped.id, { sortOrder: 3 })).sortOrder).toBe(3)
+    expect(await repository.deleteCommand(global.id)).toBe(true)
+    await repository.delete(host.host.id)
+    await expect(repository.getCommand(scoped.id)).rejects.toThrow(/Unknown command/)
+  })
 })

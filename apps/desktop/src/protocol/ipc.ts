@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { hostKeyRecordSchema, protocolVersion, telemetrySnapshotSchema, transferJobSchema } from './domain'
+import { commandPresetSchema, entityIdSchema, hostKeyRecordSchema, protocolVersion, telemetrySnapshotSchema, transferJobSchema } from './domain'
 import { appSettingsPatchSchema, appSettingsSchema } from './settings'
 import {
   connectionSnapshotSchema,
@@ -64,6 +64,23 @@ import {
   terminalSessionSchema,
   terminalWriteRequestSchema
 } from './terminal'
+import type { commandEventSchema } from './command'
+import {
+  codexActionRequestSchema,
+  codexActionResultSchema,
+  codexInstallPlanSchema,
+  codexProbeRequestSchema,
+  codexStatusSchema,
+  commandAnalysisSchema,
+  commandDefinitionSchema,
+  commandJobRequestSchema,
+  commandJobSchema,
+  commandPresetIdRequestSchema,
+  commandPresetInputSchema,
+  commandPresetListRequestSchema,
+  commandPresetUpdateSchema,
+  commandRunRequestSchema
+} from './command'
 
 export const IPC_CHANNELS = {
   bootstrap: 'v1:app.bootstrap',
@@ -123,11 +140,23 @@ export const IPC_CHANNELS = {
   btopProbe: 'v1:btop.probe',
   btopWatchdogStart: 'v1:btop.watchdog.start',
   btopWatchdogStop: 'v1:btop.watchdog.stop',
+  commandsList: 'v1:commands.list',
+  commandsCreate: 'v1:commands.create',
+  commandsUpdate: 'v1:commands.update',
+  commandsDelete: 'v1:commands.delete',
+  commandsAnalyze: 'v1:commands.analyze',
+  commandsRun: 'v1:commands.run',
+  commandsJobs: 'v1:commands.jobs',
+  commandsCancel: 'v1:commands.cancel',
+  codexInstallPlan: 'v1:codex.installPlan',
+  codexProbe: 'v1:codex.probe',
+  codexAction: 'v1:codex.action',
   hostStateEvent: 'v1:event.hostState',
   terminalEvent: 'v1:event.terminal',
   transferEvent: 'v1:event.transfer',
   tunnelEvent: 'v1:event.tunnel',
-  telemetryEvent: 'v1:event.telemetry'
+  telemetryEvent: 'v1:event.telemetry',
+  commandEvent: 'v1:event.command'
 } as const
 
 export const emptyRequestSchema = z.object({}).strict()
@@ -197,7 +226,18 @@ export const ipcContracts = {
   telemetrySignal: { channel: IPC_CHANNELS.telemetrySignal, input: telemetrySignalRequestSchema, output: telemetrySignalResultSchema },
   btopProbe: { channel: IPC_CHANNELS.btopProbe, input: telemetryHostRequestSchema, output: btopStatusSchema },
   btopWatchdogStart: { channel: IPC_CHANNELS.btopWatchdogStart, input: btopWatchdogStartRequestSchema, output: btopStatusSchema },
-  btopWatchdogStop: { channel: IPC_CHANNELS.btopWatchdogStop, input: telemetryHostRequestSchema, output: btopStatusSchema }
+  btopWatchdogStop: { channel: IPC_CHANNELS.btopWatchdogStop, input: telemetryHostRequestSchema, output: btopStatusSchema },
+  commandsList: { channel: IPC_CHANNELS.commandsList, input: commandPresetListRequestSchema, output: z.array(commandDefinitionSchema) },
+  commandsCreate: { channel: IPC_CHANNELS.commandsCreate, input: commandPresetInputSchema, output: commandPresetSchema },
+  commandsUpdate: { channel: IPC_CHANNELS.commandsUpdate, input: commandPresetUpdateSchema, output: commandPresetSchema },
+  commandsDelete: { channel: IPC_CHANNELS.commandsDelete, input: commandPresetIdRequestSchema, output: z.object({ deleted: z.boolean() }) },
+  commandsAnalyze: { channel: IPC_CHANNELS.commandsAnalyze, input: z.object({ hostId: entityIdSchema, presetId: entityIdSchema }).strict(), output: commandAnalysisSchema },
+  commandsRun: { channel: IPC_CHANNELS.commandsRun, input: commandRunRequestSchema, output: commandJobSchema },
+  commandsJobs: { channel: IPC_CHANNELS.commandsJobs, input: emptyRequestSchema, output: z.array(commandJobSchema) },
+  commandsCancel: { channel: IPC_CHANNELS.commandsCancel, input: commandJobRequestSchema, output: commandJobSchema },
+  codexInstallPlan: { channel: IPC_CHANNELS.codexInstallPlan, input: emptyRequestSchema, output: codexInstallPlanSchema },
+  codexProbe: { channel: IPC_CHANNELS.codexProbe, input: codexProbeRequestSchema, output: codexStatusSchema },
+  codexAction: { channel: IPC_CHANNELS.codexAction, input: codexActionRequestSchema, output: codexActionResultSchema }
 } as const
 
 export interface RemoteDeckApi {
@@ -285,5 +325,21 @@ export interface RemoteDeckApi {
       stopWatchdog(hostId: string): Promise<z.infer<typeof ipcContracts.btopWatchdogStop.output>>
     }
     onEvent(callback: (event: z.infer<typeof telemetryEventSchema>) => void): () => void
+  }
+  commands: {
+    list(hostId: string): Promise<z.infer<typeof ipcContracts.commandsList.output>>
+    create(request: z.infer<typeof ipcContracts.commandsCreate.input>): Promise<z.infer<typeof ipcContracts.commandsCreate.output>>
+    update(request: z.infer<typeof ipcContracts.commandsUpdate.input>): Promise<z.infer<typeof ipcContracts.commandsUpdate.output>>
+    delete(presetId: string): Promise<z.infer<typeof ipcContracts.commandsDelete.output>>
+    analyze(hostId: string, presetId: string): Promise<z.infer<typeof ipcContracts.commandsAnalyze.output>>
+    run(request: z.infer<typeof ipcContracts.commandsRun.input>): Promise<z.infer<typeof ipcContracts.commandsRun.output>>
+    jobs(): Promise<z.infer<typeof ipcContracts.commandsJobs.output>>
+    cancel(jobId: string): Promise<z.infer<typeof ipcContracts.commandsCancel.output>>
+    onEvent(callback: (event: z.infer<typeof commandEventSchema>) => void): () => void
+  }
+  codex: {
+    installPlan(): Promise<z.infer<typeof ipcContracts.codexInstallPlan.output>>
+    probe(hostId: string): Promise<z.infer<typeof ipcContracts.codexProbe.output>>
+    action(request: z.infer<typeof ipcContracts.codexAction.input>): Promise<z.infer<typeof ipcContracts.codexAction.output>>
   }
 }

@@ -1,0 +1,14 @@
+#!/bin/sh
+if [ "$1" = "--version" ]; then echo "codex-cli 0.0.0-remotedeck-mock"; exit 0; fi
+if [ "$1" = "--help" ]; then echo "Commands: login resume update"; exit 0; fi
+if [ "$1" = "login" ] && [ "$2" = "status" ]; then
+  if [ -f /tmp/remotedeck-codex-logged-in ]; then echo "Logged in using ChatGPT"; exit 0; fi
+  echo "Not logged in" >&2; exit 1
+fi
+if [ "$1" = "login" ] && [ "$2" = "--help" ]; then echo "Usage: codex login --device-auth"; exit 0; fi
+if [ "$1" = "resume" ] && [ "$2" = "--help" ]; then echo "Usage: codex resume --last --all"; exit 0; fi
+if [ "$1" = "update" ] && [ "$2" = "--help" ]; then echo "Usage: codex update"; exit 0; fi
+if [ "$1" = "login" ] && [ "$2" = "--device-auth" ]; then echo "MOCK_DEVICE_AUTH"; exit 0; fi
+if [ "$1" = "resume" ]; then echo "MOCK_RESUME"; exit 0; fi
+if [ "$1" = "update" ]; then echo "MOCK_UPDATE"; exit 0; fi
+echo "MOCK_CODEX_TUI_BOUNDARY"

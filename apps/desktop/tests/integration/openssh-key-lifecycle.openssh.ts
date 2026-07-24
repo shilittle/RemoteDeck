@@ -15,6 +15,8 @@ import type { TransferJob } from '../../src/protocol/domain'
 import { TunnelService } from '../../src/core/tunnels/tunnel-service'
 import { TelemetryService } from '../../src/core/telemetry/telemetry-service'
 import { BtopService } from '../../src/core/telemetry/btop-service'
+import { CommandService } from '../../src/core/commands/command-service'
+import { CodexService } from '../../src/core/commands/codex-service'
 
 const host = process.env['REMOTEDECK_OPENSSH_HOST']
 const port = Number(process.env['REMOTEDECK_OPENSSH_PORT'])
@@ -176,6 +178,21 @@ describe('Docker OpenSSH password-to-key lifecycle', () => {
       btop.stopAll()
     }
 
+    const commands = new CommandService(repository, connections, terminals)
+    const commandPreset = await repository.addCommand({ hostId: profile.host.id, name: 'M7 Docker command', description: '', group: 'integration', command: 'printf M7_COMMAND_OK', risk: 'L1', requiresPty: false, requiresSudo: false, sortOrder: 1 })
+    await expect(commands.run({ hostId: profile.host.id, presetId: commandPreset.id, confirmed: false, confirmationInput: '' })).rejects.toThrow(/confirmation/)
+    const commandJob = await commands.run({ hostId: profile.host.id, presetId: commandPreset.id, confirmed: true, confirmationInput: '' })
+    await waitForCommandJob(commands, commandJob.id)
+    expect(commands.listJobs().find((item) => item.id === commandJob.id)?.output).toContain('M7_COMMAND_OK')
+    const dangerousPreset = await repository.addCommand({ hostId: profile.host.id, name: 'M7 gate only', description: '', group: 'integration', command: 'rm -rf /tmp/remotedeck-never-created', risk: 'L0', requiresPty: false, requiresSudo: false, sortOrder: 2 })
+    await expect(commands.run({ hostId: profile.host.id, presetId: dangerousPreset.id, confirmed: true, confirmationInput: 'wrong' })).rejects.toThrow(/does not match/)
+
+    const codex = new CodexService(repository, connections, terminals)
+    await expect(codex.probe(profile.host.id)).resolves.toMatchObject({ installed: true, login: 'logged_out', capabilities: { deviceAuth: true, resumeLast: true, update: true } })
+    expect((await execute(connections.getOnlineClient(profile.host.id), 'touch /tmp/remotedeck-codex-logged-in')).code).toBe(0)
+    await expect(codex.probe(profile.host.id)).resolves.toMatchObject({ installed: true, login: 'logged_in' })
+    expect((await execute(connections.getOnlineClient(profile.host.id), 'rm -f /tmp/remotedeck-codex-logged-in')).code).toBe(0)
+
     terminals.closeAll()
     await connections.disconnectAll()
   })
@@ -186,6 +203,17 @@ async function waitForOutput(read: () => string, marker: string): Promise<void> 
   while (!read().includes(marker)) {
     if (Date.now() >= deadline) throw new Error(`Timed out waiting for terminal marker ${marker}. Output: ${read().slice(-4000)}`)
     await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+}
+
+async function waitForCommandJob(commands: CommandService, jobId: string): Promise<void> {
+  const deadline = Date.now() + 10_000
+  for (;;) {
+    const job = commands.listJobs().find((item) => item.id === jobId)
+    if (job?.state === 'completed') return
+    if (job?.state === 'failed' || job?.state === 'cancelled') throw new Error(`Command job failed: ${JSON.stringify(job)}`)
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for command job: ${JSON.stringify(job)}`)
+    await new Promise((resolve) => setTimeout(resolve, 25))
   }
 }
 
