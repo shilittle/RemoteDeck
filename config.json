@@ -1,0 +1,88 @@
+{
+  "appName": "LabPulse SSH",
+  "sshHost": "lab",
+  "forwardHost": "lab-codex",
+  "telemetryIntervalSeconds": 3,
+  "telemetryStaleSeconds": 15,
+  "endpointCheckSeconds": 10,
+  "btop": {
+    "enabled": true,
+    "autoRestart": true,
+    "command": "btop --tty_on --utf-force --update 2000",
+    "watchdogSeconds": 8,
+    "restartCycleSeconds": 900
+  },
+  "forward": {
+    "autoStart": true,
+    "autoRestart": true,
+    "remoteBindAddress": "127.0.0.1",
+    "remotePort": 17890,
+    "localTargetAddress": "127.0.0.1",
+    "localTargetPort": 7890,
+    "watchdogSeconds": 5,
+    "maxRestartDelaySeconds": 60,
+    "releaseCommand": "port=17890; if ss -ltnH \"sport = :${port}\" 2>/dev/null | grep -q .; then if command -v fuser >/dev/null 2>&1; then fuser -k \"${port}/tcp\" >/dev/null 2>&1 || sudo -n fuser -k \"${port}/tcp\" >/dev/null 2>&1 || true; fi; fi"
+  },
+  "dangerousCommandPatterns": [
+    "(^|[;&|\\s])(sudo\\s+)?(reboot|shutdown|poweroff|halt)([;&|\\s]|$)",
+    "(^|[;&|\\s])sudo\\s+",
+    "(^|[;&|\\s])rm\\s+",
+    "(^|[;&|\\s])(mkfs|fdisk|parted|wipefs)([;&|\\s]|$)",
+    "(^|[;&|\\s])dd\\s+[^\\n]*of=",
+    "(^|[;&|\\s])(kill|pkill|killall)\\s+",
+    "(^|[;&|\\s])fuser\\s+[^\\n]*-k",
+    "(^|[;&|\\s])(systemctl|service)\\s+(stop|restart|disable|mask)\\s+",
+    "(^|[;&|\\s])docker\\s+(system\\s+prune|rm|kill|stop)\\s+"
+  ],
+  "presets": [
+    {
+      "name": "系统概况",
+      "description": "查看运行时长、负载、内存和根分区使用情况。",
+      "risk": "safe",
+      "command": "printf '%s\\n' '=== uptime ==='; uptime; printf '%s\\n' '=== memory ==='; free -h; printf '%s\\n' '=== disk ==='; df -hT / /data 2>/dev/null"
+    },
+    {
+      "name": "GPU 状态",
+      "description": "显示两张 NVIDIA GPU 的利用率、显存、温度和进程。",
+      "risk": "safe",
+      "command": "nvidia-smi"
+    },
+    {
+      "name": "CPU 高占用进程",
+      "description": "按 CPU 使用率列出前 30 个进程。",
+      "risk": "safe",
+      "command": "ps -eo pid,user,pcpu,pmem,stat,lstart,comm --sort=-pcpu | head -31"
+    },
+    {
+      "name": "内存高占用进程",
+      "description": "按内存使用率列出前 30 个进程。",
+      "risk": "safe",
+      "command": "ps -eo pid,user,pcpu,pmem,rss,stat,comm --sort=-pmem | head -31"
+    },
+    {
+      "name": "磁盘与 inode",
+      "description": "检查文件系统容量和 inode 使用率。",
+      "risk": "safe",
+      "command": "df -hT; printf '%s\\n' '=== inode ==='; df -ih"
+    },
+    {
+      "name": "当前用户任务",
+      "description": "显示当前账户的进程树；若有 Slurm，再显示队列任务。",
+      "risk": "safe",
+      "command": "ps -u \"$USER\" -o pid,ppid,pcpu,pmem,stat,etime,comm --forest; if command -v squeue >/dev/null 2>&1; then printf '%s\\n' '=== Slurm ==='; squeue -u \"$USER\"; fi"
+    },
+    {
+      "name": "网络监听",
+      "description": "显示当前可见的 TCP/UDP 监听端口。",
+      "risk": "safe",
+      "command": "ss -lntup 2>/dev/null || ss -lntu"
+    },
+    {
+      "name": "重启工作站",
+      "description": "执行 sudo reboot。将先警告，再要求输入 REBOOT lab；sudo 密码在独立终端内输入。",
+      "risk": "danger",
+      "confirmToken": "REBOOT lab",
+      "command": "sudo reboot"
+    }
+  ]
+}
