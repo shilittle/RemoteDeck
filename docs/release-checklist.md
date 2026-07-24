@@ -27,6 +27,7 @@ Real secrets, private-key passphrases, Codex account approval and code-signing c
 - [x] M9 documentation and release candidate commit created.
 - [x] Branch pushed when GitHub authentication is available.
 - [x] Draft PR opened; CI observed and failures fixed.
-- [x] Do not merge the PR and do not publish a formal Release automatically.
+- [x] Draft PR remained unmerged and no formal Release was published before explicit user authorization.
+- [x] Explicit user authorization received on 2026-07-25 to fast-forward `main` and publish the `v1.0.0` Release.
 
-Final required-check evidence is the green check rollup on Draft PR [#1](https://github.com/shilittle/RemoteDeck/pull/1): Ubuntu/Windows quality, two-container Docker OpenSSH direct/ProxyJump acceptance, Electron E2E, NSIS/portable packaging, both packaged launch smokes and artifact upload. The PR remains open and unmerged.
+Final pre-publication evidence is the green check rollup on Draft PR [#1](https://github.com/shilittle/RemoteDeck/pull/1): Ubuntu/Windows quality, two-container Docker OpenSSH direct/ProxyJump acceptance, Electron E2E, NSIS/portable packaging, both packaged launch smokes and artifact upload. Publication to `main` and `v1.0.0` is a one-time action under the explicit 2026-07-25 user authorization; RemoteDeck has no automatic merge or formal Release path.
