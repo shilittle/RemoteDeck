@@ -11,6 +11,8 @@ import type { SshConnectionManager } from '../../core/ssh/connection-manager'
 import type { TerminalService } from '../../core/terminal/terminal-service'
 import type { SftpService } from '../../core/sftp/sftp-service'
 import type { TransferService } from '../../core/sftp/transfer-service'
+import type { TunnelService } from '../../core/tunnels/tunnel-service'
+import { detectClashCandidates } from '../../core/tunnels/clash-detector'
 import { IPC_CHANNELS } from '../../protocol/ipc'
 
 interface IpcDependencies {
@@ -24,12 +26,13 @@ interface IpcDependencies {
   terminals: TerminalService
   sftp: SftpService
   transfers: TransferService
+  tunnels: TunnelService
   logger: Logger
   appVersion: string
 }
 
 export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
-  const { ipcMain, window, settings, hosts, profiles, connections, keys, terminals, sftp, transfers, logger, appVersion } = dependencies
+  const { ipcMain, window, settings, hosts, profiles, connections, keys, terminals, sftp, transfers, tunnels, logger, appVersion } = dependencies
   const channels: string[] = []
 
   register(ipcContracts.bootstrap, async () => ({
@@ -95,6 +98,14 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
   register(ipcContracts.transfersCancel, (request) => transfers.cancel(request.jobId))
   register(ipcContracts.transfersRetry, (request) => transfers.retry(request.jobId))
   register(ipcContracts.transfersShowInFolder, (request) => { shell.showItemInFolder(transfers.localPathFor(request.jobId)); return { shown: true as const } })
+  register(ipcContracts.tunnelsList, (request) => tunnels.list(request.hostId))
+  register(ipcContracts.tunnelsCreate, (request) => tunnels.create(request))
+  register(ipcContracts.tunnelsUpdate, (request) => tunnels.update(request))
+  register(ipcContracts.tunnelsDelete, async (request) => ({ deleted: await tunnels.delete(request.tunnelId) }))
+  register(ipcContracts.tunnelsStart, (request) => tunnels.start(request.tunnelId, request.credentials))
+  register(ipcContracts.tunnelsStop, (request) => tunnels.stop(request.tunnelId))
+  register(ipcContracts.tunnelsRestart, (request) => tunnels.restart(request.tunnelId, request.credentials))
+  register(ipcContracts.tunnelsDetectClash, () => detectClashCandidates())
 
   const onHostState = (snapshot: unknown): void => {
     if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.hostStateEvent, snapshot)
@@ -108,6 +119,10 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
     if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.transferEvent, event)
   }
   transfers.on('event', onTransferEvent)
+  const onTunnelEvent = (event: unknown): void => {
+    if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.tunnelEvent, event)
+  }
+  tunnels.on('event', onTunnelEvent)
 
   function register<TInput, TOutput>(
     contract: { channel: string; input: ZodType<TInput>; output: ZodType<TOutput> },
@@ -131,6 +146,7 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
     connections.off('state', onHostState)
     terminals.off('event', onTerminalEvent)
     transfers.off('event', onTransferEvent)
+    tunnels.off('event', onTunnelEvent)
   }
 }
 

@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, ipcMain, session } from 'electron'
+import { app, BrowserWindow, ipcMain, powerMonitor, session } from 'electron'
 import { SettingsService } from '../core/settings-service'
 import { HostService } from '../core/hosts/host-service'
 import { ProfileRepository } from '../core/hosts/profile-repository'
@@ -9,6 +9,7 @@ import { KeyService } from '../core/keys/key-service'
 import { TerminalService } from '../core/terminal/terminal-service'
 import { SftpService } from '../core/sftp/sftp-service'
 import { TransferService } from '../core/sftp/transfer-service'
+import { TunnelService } from '../core/tunnels/tunnel-service'
 import { registerIpcHandlers } from './ipc/register-ipc'
 import { categoryLogger, createAppLogger } from './logging/logger'
 import { hardenWindow, installSessionSecurity, secureWindowOptions } from './security/window-security'
@@ -56,9 +57,11 @@ if (!app.requestSingleInstanceLock()) {
     const terminals = new TerminalService(connections, profiles)
     const sftp = new SftpService(connections)
     const transfers = new TransferService(sftp)
+    const mainLogger = categoryLogger(logger, 'main')
+    const tunnels = new TunnelService(profiles, connections, mainLogger)
     mainWindow = createWindow()
-    const ipcDependencies = { ipcMain, settings, hosts, profiles, connections, keys, terminals, sftp, transfers, logger: categoryLogger(logger, 'main'), appVersion: app.getVersion() }
-    disposeRuntime = () => { transfers.cancelAll(); terminals.closeAll(); void connections.disconnectAll() }
+    const ipcDependencies = { ipcMain, settings, hosts, profiles, connections, keys, terminals, sftp, transfers, tunnels, logger: mainLogger, appVersion: app.getVersion() }
+    disposeRuntime = () => { transfers.cancelAll(); terminals.closeAll(); void tunnels.stopAll(); void connections.disconnectAll() }
     disposeIpc = registerIpcHandlers({ ...ipcDependencies, window: mainWindow })
     mainWindow.on('closed', () => { mainWindow = null })
     app.on('activate', () => {
@@ -68,6 +71,9 @@ if (!app.requestSingleInstanceLock()) {
         disposeIpc = registerIpcHandlers({ ...ipcDependencies, window: mainWindow })
       }
     })
+    powerMonitor.on('suspend', () => { void tunnels.suspend() })
+    powerMonitor.on('resume', () => { tunnels.resume() })
+    void tunnels.restoreAutoStart()
     logger.info({ development }, 'RemoteDeck started')
   })
 }

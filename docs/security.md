@@ -22,6 +22,8 @@ Interactive terminal bytes cross only the fixed terminal IPC contracts and are n
 
 SFTP paths and entries cross fixed schemas; remote mutations never invoke a shell. Recursive operations use `lstat` and do not follow symbolic links. Transfers write instance/job-owned temporary names and rename only after success. Cancellation cleanup targets only those exact paths. Native pickers and dropped `File` objects establish user intent for local filesystem sources and destinations; the renderer has no general path-reading API.
 
+Tunnel profiles persist endpoints and health policy but never credentials. Each active tunnel owns its SSH connection, local listener or remote bind, streams, and timers. Cleanup closes only those resources; ordinary port conflicts cannot trigger process termination. Clash/Mihomo discovery is read-only and requires the user to select a candidate. The optional legacy remote cleanup hook is disabled by default, stores the exact visible command and an explicit authorization flag, runs only after a bind failure, and emits an audit log entry. See `docs/tunnels.md`.
+
 ## Trust boundaries still requiring user action
 
 RemoteDeck cannot decide whether an unknown host key belongs to the intended server, provide a user's SSH secret, authorize a code-signing identity, or perform a real Codex account login. Those actions require explicit user confirmation or input; tests use local SSH fixtures and mocked external account boundaries.

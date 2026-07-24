@@ -38,6 +38,16 @@ import {
   transferUploadRequestSchema
 } from './sftp'
 import { transferJobSchema } from './domain'
+import type { tunnelEventSchema } from './tunnel'
+import {
+  clashCandidateSchema,
+  tunnelCreateRequestSchema,
+  tunnelIdRequestSchema,
+  tunnelListRequestSchema,
+  tunnelSnapshotSchema,
+  tunnelStartRequestSchema,
+  tunnelUpdateRequestSchema
+} from './tunnel'
 import {
   terminalCreateRequestSchema,
   terminalResizeRequestSchema,
@@ -88,9 +98,18 @@ export const IPC_CHANNELS = {
   transfersCancel: 'v1:transfers.cancel',
   transfersRetry: 'v1:transfers.retry',
   transfersShowInFolder: 'v1:transfers.showInFolder',
+  tunnelsList: 'v1:tunnels.list',
+  tunnelsCreate: 'v1:tunnels.create',
+  tunnelsUpdate: 'v1:tunnels.update',
+  tunnelsDelete: 'v1:tunnels.delete',
+  tunnelsStart: 'v1:tunnels.start',
+  tunnelsStop: 'v1:tunnels.stop',
+  tunnelsRestart: 'v1:tunnels.restart',
+  tunnelsDetectClash: 'v1:tunnels.detectClash',
   hostStateEvent: 'v1:event.hostState',
   terminalEvent: 'v1:event.terminal',
-  transferEvent: 'v1:event.transfer'
+  transferEvent: 'v1:event.transfer',
+  tunnelEvent: 'v1:event.tunnel'
 } as const
 
 export const emptyRequestSchema = z.object({}).strict()
@@ -144,7 +163,15 @@ export const ipcContracts = {
   transfersDownload: { channel: IPC_CHANNELS.transfersDownload, input: transferDownloadRequestSchema, output: transferStartResultSchema },
   transfersCancel: { channel: IPC_CHANNELS.transfersCancel, input: transferJobRequestSchema, output: transferJobSchema },
   transfersRetry: { channel: IPC_CHANNELS.transfersRetry, input: transferJobRequestSchema, output: transferJobSchema },
-  transfersShowInFolder: { channel: IPC_CHANNELS.transfersShowInFolder, input: transferJobRequestSchema, output: z.object({ shown: z.literal(true) }) }
+  transfersShowInFolder: { channel: IPC_CHANNELS.transfersShowInFolder, input: transferJobRequestSchema, output: z.object({ shown: z.literal(true) }) },
+  tunnelsList: { channel: IPC_CHANNELS.tunnelsList, input: tunnelListRequestSchema, output: z.array(tunnelSnapshotSchema) },
+  tunnelsCreate: { channel: IPC_CHANNELS.tunnelsCreate, input: tunnelCreateRequestSchema, output: tunnelSnapshotSchema },
+  tunnelsUpdate: { channel: IPC_CHANNELS.tunnelsUpdate, input: tunnelUpdateRequestSchema, output: tunnelSnapshotSchema },
+  tunnelsDelete: { channel: IPC_CHANNELS.tunnelsDelete, input: tunnelIdRequestSchema, output: z.object({ deleted: z.boolean() }) },
+  tunnelsStart: { channel: IPC_CHANNELS.tunnelsStart, input: tunnelStartRequestSchema, output: tunnelSnapshotSchema },
+  tunnelsStop: { channel: IPC_CHANNELS.tunnelsStop, input: tunnelIdRequestSchema, output: tunnelSnapshotSchema },
+  tunnelsRestart: { channel: IPC_CHANNELS.tunnelsRestart, input: tunnelStartRequestSchema, output: tunnelSnapshotSchema },
+  tunnelsDetectClash: { channel: IPC_CHANNELS.tunnelsDetectClash, input: emptyRequestSchema, output: z.array(clashCandidateSchema) }
 } as const
 
 export interface RemoteDeckApi {
@@ -208,5 +235,16 @@ export interface RemoteDeckApi {
       showInFolder(jobId: string): Promise<z.infer<typeof ipcContracts.transfersShowInFolder.output>>
       onEvent(callback: (event: z.infer<typeof transferEventSchema>) => void): () => void
     }
+  }
+  tunnels: {
+    list(hostId?: string): Promise<z.infer<typeof ipcContracts.tunnelsList.output>>
+    create(request: z.infer<typeof ipcContracts.tunnelsCreate.input>): Promise<z.infer<typeof ipcContracts.tunnelsCreate.output>>
+    update(request: z.infer<typeof ipcContracts.tunnelsUpdate.input>): Promise<z.infer<typeof ipcContracts.tunnelsUpdate.output>>
+    delete(tunnelId: string): Promise<z.infer<typeof ipcContracts.tunnelsDelete.output>>
+    start(request: z.infer<typeof ipcContracts.tunnelsStart.input>): Promise<z.infer<typeof ipcContracts.tunnelsStart.output>>
+    stop(tunnelId: string): Promise<z.infer<typeof ipcContracts.tunnelsStop.output>>
+    restart(request: z.infer<typeof ipcContracts.tunnelsRestart.input>): Promise<z.infer<typeof ipcContracts.tunnelsRestart.output>>
+    detectClash(): Promise<z.infer<typeof ipcContracts.tunnelsDetectClash.output>>
+    onEvent(callback: (event: z.infer<typeof tunnelEventSchema>) => void): () => void
   }
 }

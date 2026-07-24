@@ -196,6 +196,29 @@ export class ProfileRepository {
     return (await this.#store.load()).tunnels
   }
 
+  async updateTunnel(tunnelId: string, patch: Partial<Omit<TunnelProfile, 'schemaVersion' | 'id' | 'hostId' | 'createdAt' | 'updatedAt' | 'healthCheck' | 'legacyCleanupHook'>> & { healthCheck?: TunnelProfile['healthCheck'] | null; legacyCleanupHook?: TunnelProfile['legacyCleanupHook'] | null }): Promise<TunnelProfile> {
+    let updated: TunnelProfile | undefined
+    await this.#store.update((data) => {
+      const index = data.tunnels.findIndex((item) => item.id === tunnelId)
+      const current = data.tunnels[index]
+      if (!current) throw new Error(`Unknown tunnel profile: ${tunnelId}`)
+      const merged: Record<string, unknown> = { ...current, ...patch, updatedAt: new Date().toISOString() }
+      if (patch.healthCheck === null) delete merged['healthCheck']
+      if (patch.legacyCleanupHook === null) delete merged['legacyCleanupHook']
+      const next = tunnelProfileSchema.parse(merged)
+      updated = next
+      return { ...data, tunnels: data.tunnels.with(index, next) }
+    })
+    if (!updated) throw new Error('Tunnel update failed')
+    return updated
+  }
+
+  async deleteTunnel(tunnelId: string): Promise<boolean> {
+    let deleted = false
+    await this.#store.update((data) => { const tunnels = data.tunnels.filter((item) => item.id !== tunnelId); deleted = tunnels.length !== data.tunnels.length; return { ...data, tunnels } })
+    return deleted
+  }
+
   async savePrivateKeyMetadata(metadata: PrivateKeyMetadata): Promise<PrivateKeyMetadata> {
     const parsed = privateKeyMetadataSchema.parse(metadata)
     await this.#store.update((data) => ({

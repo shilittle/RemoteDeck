@@ -6,6 +6,7 @@ import type { HostCreateRequest, HostUpdateRequest, KeyDeployRequest, KeyGenerat
 import { hostStateEventSchema } from '../protocol/ssh'
 import { terminalEventSchema } from '../protocol/terminal'
 import { transferEventSchema } from '../protocol/sftp'
+import { tunnelEventSchema } from '../protocol/tunnel'
 import { IPC_CHANNELS } from '../protocol/ipc'
 import { ipcContracts } from '../protocol/ipc'
 
@@ -91,6 +92,21 @@ const api: RemoteDeckApi = Object.freeze({
         return () => ipcRenderer.removeListener(IPC_CHANNELS.transferEvent, listener)
       }
     })
+  }),
+  tunnels: Object.freeze({
+    list: (hostId?: string) => invoke(ipcContracts.tunnelsList, hostId ? { hostId } : {}),
+    create: (request: Parameters<RemoteDeckApi['tunnels']['create']>[0]) => invoke(ipcContracts.tunnelsCreate, request),
+    update: (request: Parameters<RemoteDeckApi['tunnels']['update']>[0]) => invoke(ipcContracts.tunnelsUpdate, request),
+    delete: (tunnelId: string) => invoke(ipcContracts.tunnelsDelete, { tunnelId }),
+    start: (request: Parameters<RemoteDeckApi['tunnels']['start']>[0]) => invoke(ipcContracts.tunnelsStart, request),
+    stop: (tunnelId: string) => invoke(ipcContracts.tunnelsStop, { tunnelId }),
+    restart: (request: Parameters<RemoteDeckApi['tunnels']['restart']>[0]) => invoke(ipcContracts.tunnelsRestart, request),
+    detectClash: () => invoke(ipcContracts.tunnelsDetectClash, {}),
+    onEvent: (callback: Parameters<RemoteDeckApi['tunnels']['onEvent']>[0]) => {
+      const listener = (_event: IpcRendererEvent, raw: unknown): void => callback(tunnelEventSchema.parse(raw))
+      ipcRenderer.on(IPC_CHANNELS.tunnelEvent, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.tunnelEvent, listener)
+    }
   })
 })
 

@@ -13,9 +13,9 @@ RUN apk add --no-cache bash btop openssh python3 tmux vim \
       'PermitRootLogin no' \
       'UsePAM no' \
       'AllowTcpForwarding yes' \
-      'GatewayPorts no' \
+      'GatewayPorts clientspecified' \
       'Subsystem sftp internal-sftp' \
       > /etc/ssh/sshd_config
 
-EXPOSE 22
-CMD ["/usr/sbin/sshd", "-D", "-e"]
+EXPOSE 22 17890
+CMD ["/bin/bash", "-lc", "python3 -m http.server 18080 --bind 127.0.0.1 >/tmp/remotedeck-http.log 2>&1 & exec /usr/sbin/sshd -D -e"]

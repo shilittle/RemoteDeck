@@ -1,6 +1,8 @@
 import { mkdir, mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createServer } from 'node:net'
+import pino from 'pino'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { KeyService } from '../../src/core/keys/key-service'
 import { ProfileRepository } from '../../src/core/hosts/profile-repository'
@@ -10,9 +12,11 @@ import type { TerminalEvent } from '../../src/protocol/terminal'
 import { SftpService } from '../../src/core/sftp/sftp-service'
 import { TransferService } from '../../src/core/sftp/transfer-service'
 import type { TransferJob } from '../../src/protocol/domain'
+import { TunnelService } from '../../src/core/tunnels/tunnel-service'
 
 const host = process.env['REMOTEDECK_OPENSSH_HOST']
 const port = Number(process.env['REMOTEDECK_OPENSSH_PORT'])
+const remoteForwardPort = Number(process.env['REMOTEDECK_REMOTE_FORWARD_PORT'] ?? 17890)
 if (!host || !Number.isInteger(port) || port <= 0) throw new Error('Docker OpenSSH endpoint environment is required')
 
 let directory = ''
@@ -118,6 +122,28 @@ describe('Docker OpenSSH password-to-key lifecycle', () => {
     await sftp.delete(profile.host.id, [remoteRoot])
     expect((await sftp.list(profile.host.id, '/home/remotedeck', true)).entries.some((entry) => entry.name === 'm4-sftp')).toBe(false)
 
+    const tunnels = new TunnelService(repository, connections, pino({ enabled: false }))
+    const localForwardPort = await reservePort()
+    const target = createServer((socket) => socket.end('HTTP/1.1 200 OK\r\nContent-Length: 17\r\nConnection: close\r\n\r\nREMOTE_FORWARD_OK'))
+    await new Promise<void>((resolve, reject) => { target.once('error', reject); target.listen(0, '127.0.0.1', () => resolve()) })
+    const targetAddress = target.address()
+    if (!targetAddress || typeof targetAddress === 'string') throw new Error('RemoteForward target has no TCP port')
+    const localTunnel = await repository.addTunnel({ hostId: profile.host.id, name: 'Docker LocalForward', direction: 'local', bindAddress: '127.0.0.1', sourcePort: localForwardPort, targetHost: '127.0.0.1', targetPort: 18080, autoStart: false, healthCheck: { type: 'http', intervalSeconds: 2, timeoutMs: 2000, path: '/', expectedStatus: 200 } })
+    const remoteTunnel = await repository.addTunnel({ hostId: profile.host.id, name: 'Docker RemoteForward', direction: 'remote', bindAddress: '0.0.0.0', sourcePort: remoteForwardPort, targetHost: '127.0.0.1', targetPort: targetAddress.port, autoStart: false, healthCheck: { type: 'tcp', intervalSeconds: 2, timeoutMs: 2000 } })
+    try {
+      await expect(tunnels.start(localTunnel.id, { passphrase: 'integration-passphrase' })).resolves.toMatchObject({ state: 'online' })
+      await expect(tunnels.start(remoteTunnel.id, { passphrase: 'integration-passphrase' })).resolves.toMatchObject({ state: 'online' })
+      expect((await fetch(`http://127.0.0.1:${String(localForwardPort)}/`)).status).toBe(200)
+      expect(await (await fetch(`http://127.0.0.1:${String(remoteForwardPort)}/`)).text()).toBe('REMOTE_FORWARD_OK')
+      await tunnels.stop(localTunnel.id)
+      expect(await (await fetch(`http://127.0.0.1:${String(remoteForwardPort)}/`)).text()).toBe('REMOTE_FORWARD_OK')
+      expect((await tunnels.list(profile.host.id)).find((item) => item.profile.id === localTunnel.id)?.state).toBe('stopped')
+      expect((await tunnels.list(profile.host.id)).find((item) => item.profile.id === remoteTunnel.id)?.state).toBe('online')
+    } finally {
+      await tunnels.stopAll()
+      await new Promise<void>((resolve) => target.close(() => resolve()))
+    }
+
     terminals.closeAll()
     await connections.disconnectAll()
   })
@@ -129,6 +155,16 @@ async function waitForOutput(read: () => string, marker: string): Promise<void> 
     if (Date.now() >= deadline) throw new Error(`Timed out waiting for terminal marker ${marker}. Output: ${read().slice(-4000)}`)
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
+}
+
+async function reservePort(): Promise<number> {
+  const server = createServer()
+  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', () => resolve()) })
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('LocalForward reservation has no TCP port')
+  const reserved = address.port
+  await new Promise<void>((resolve) => server.close(() => resolve()))
+  return reserved
 }
 
 async function waitForJob(transfers: TransferService, jobId: string, states: TransferJob['state'][]): Promise<TransferJob> {

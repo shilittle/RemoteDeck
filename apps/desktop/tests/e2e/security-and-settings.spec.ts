@@ -25,7 +25,7 @@ test('renderer is sandboxed and settings round-trip through validated IPC', asyn
         nodeGlobalPresent: 'process' in globalThis,
         apiKeys: Object.keys((globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck).sort()
       }))
-      expect(boundary).toEqual({ nodeGlobalPresent: false, apiKeys: ['app', 'hostKeys', 'hosts', 'keys', 'settings', 'sftp', 'terminals'] })
+      expect(boundary).toEqual({ nodeGlobalPresent: false, apiKeys: ['app', 'hostKeys', 'hosts', 'keys', 'settings', 'sftp', 'terminals', 'tunnels'] })
       await firstWindow.evaluate(() => (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck.settings.update({ terminalFontSize: 17 }))
       const sshConfigPath = join(userData, '.ssh', 'config')
       await firstWindow.evaluate((configPath) => (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck.settings.update({ sshConfigPath: configPath }), sshConfigPath)
@@ -40,6 +40,14 @@ test('renderer is sandboxed and settings round-trip through validated IPC', asyn
       expect(await readFile(join(userData, '.ssh', 'remotedeck.conf'), 'utf8')).toContain('Host e2e-host')
       await firstWindow.getByRole('button', { name: '文件' }).click()
       await expect(firstWindow.getByRole('heading', { name: 'e2e-host 未连接' })).toBeVisible()
+      await firstWindow.getByRole('button', { name: '隧道' }).click()
+      await firstWindow.getByRole('button', { name: '新建隧道' }).click()
+      await firstWindow.getByLabel('名称').fill('e2e-local-forward')
+      await firstWindow.getByLabel('本地监听端口').fill('18081')
+      await firstWindow.getByLabel('目标端口').fill('8080')
+      await firstWindow.getByRole('button', { name: '保存配置' }).click()
+      await expect(firstWindow.getByRole('heading', { name: 'e2e-local-forward' })).toBeVisible()
+      expect(await firstWindow.evaluate(() => (globalThis as unknown as { remoteDeck: RemoteDeckApi }).remoteDeck.tunnels.list())).toHaveLength(1)
     })
   } finally {
     if (application) await test.step('close Electron', () => application?.close())

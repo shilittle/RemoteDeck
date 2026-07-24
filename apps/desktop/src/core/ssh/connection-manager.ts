@@ -17,6 +17,11 @@ interface ConnectionEntry {
   capabilities?: ConnectionSnapshot['capabilities']
 }
 
+export interface DedicatedSshConnection {
+  client: SshClient
+  close: () => void
+}
+
 export class SshConnectionManager extends EventEmitter {
   readonly #repository: ProfileRepository
   readonly #connections = new Map<string, ConnectionEntry>()
@@ -113,6 +118,27 @@ export class SshConnectionManager extends EventEmitter {
     const entry = this.#connections.get(hostId)
     if (!entry?.client || entry.state !== 'online') throw new Error('Host is not connected')
     return entry.client
+  }
+
+  async openDedicated(hostId: string, credentials: ConnectionCredentials): Promise<DedicatedSshConnection> {
+    const profile = await this.#repository.get(hostId)
+    const records = await this.#repository.listHostKeys()
+    let jumpClient: SshClient | undefined
+    try {
+      let socket: Duplex | undefined
+      if (profile.host.jumpHostId) {
+        const jumpProfile = await this.#repository.get(profile.host.jumpHostId)
+        jumpClient = await this.#connectClient(jumpProfile, credentials.jump ?? {}, records)
+        socket = await forwardOut(jumpClient, profile.host.hostname, profile.host.port)
+      }
+      const client = await this.#connectClient(profile, credentials, records, socket)
+      return { client, close: () => { client.end(); jumpClient?.end() } }
+    } catch (error) {
+      jumpClient?.end()
+      throw error
+    } finally {
+      clearCredentials(credentials)
+    }
   }
 
   getCandidate(candidateId: string): HostKeyCandidate | undefined {
