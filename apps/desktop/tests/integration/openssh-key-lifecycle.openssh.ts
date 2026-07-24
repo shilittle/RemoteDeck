@@ -90,7 +90,7 @@ describe('Docker OpenSSH password-to-key lifecycle', () => {
     const terminal = await terminals.create({ hostId: profile.host.id, cwd: '/home/remotedeck', cols: 80, rows: 24 })
     expect(terminal.state).toBe('online')
     terminals.resize({ sessionId: terminal.id, cols: 120, rows: 40 })
-    terminals.write(terminal.id, `bash -lc 'printf BASH_OK' && vim --clean -Nu NONE -n -es -c q && printf ' VIM_OK' && tmux -L remotedeck-m3 new-session -d -s m3 'sleep 2' && tmux -L remotedeck-m3 has-session -t m3 && printf ' TMUX_OK' && btop --version | head -n1; mkdir -p -- "$HOME/中文 路径"; cd -- "$HOME/中文 路径"; printf ' PATH_OK:%s ' "$PWD"; stty size; printf 'M3_COMMANDS_DONE\\n'\r`)
+    terminals.write(terminal.id, `bash -lc 'printf BASH_OK' && vim --clean -Nu NONE -n -es -c q && printf ' VIM_OK' && tmux -L remotedeck-m3 new-session -d -s m3 'sleep 2' && tmux -L remotedeck-m3 has-session -t m3 && printf ' TMUX_OK' && btop --version | head -n1; mkdir -p -- "$HOME/中文 路径"; cd -- "$HOME/中文 路径"; printf ' PATH_OK:%s ' "$PWD"; stty size; printf 'M3_%s_DONE\\n' COMMANDS\r`)
     await waitForOutput(() => output, 'M3_COMMANDS_DONE')
     expect(output).toContain('BASH_OK')
     expect(output).toContain('VIM_OK')
@@ -101,7 +101,7 @@ describe('Docker OpenSSH password-to-key lifecycle', () => {
     terminals.write(terminal.id, 'sleep 30\r')
     await new Promise((resolve) => setTimeout(resolve, 250))
     terminals.write(terminal.id, '\u0003')
-    terminals.write(terminal.id, `printf 'CTRL_C_OK\\n'\r`)
+    terminals.write(terminal.id, `printf 'CTRL_%s_OK\\n' C\r`)
     await waitForOutput(() => output, 'CTRL_C_OK')
 
     const remoteRoot = await sftp.create(profile.host.id, '/home/remotedeck', 'm4-sftp', 'directory')
@@ -146,7 +146,7 @@ describe('Docker OpenSSH password-to-key lifecycle', () => {
     await waitForJob(transfers, cancelJob.id, ['cancelled'])
     expect((await sftp.list(profile.host.id, remoteRoot, true)).entries.some((entry) => entry.name.includes(`remotedeck-${cancelJob.id}`))).toBe(false)
 
-    terminals.write(terminal.id, `ln -s . '/home/remotedeck/m4-sftp/loop-link'; printf 'SYMLINK_DONE\\n'\r`)
+    terminals.write(terminal.id, `ln -s . '/home/remotedeck/m4-sftp/loop-link'; printf 'SYMLINK_%s\\n' DONE\r`)
     await waitForOutput(() => output, 'SYMLINK_DONE')
     expect((await sftp.list(profile.host.id, remoteRoot, true)).entries).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'loop-link', type: 'symlink' })]))
     const symlinkJob = transfers.startDownload({ hostId: profile.host.id, sources: [`${remoteRoot}/loop-link`], localDirectory: downloadDirectory, conflictPolicy: 'overwrite' })[0]
