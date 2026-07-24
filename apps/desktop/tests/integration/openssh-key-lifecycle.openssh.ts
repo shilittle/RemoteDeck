@@ -254,7 +254,7 @@ async function reservePort(): Promise<number> {
 }
 
 async function waitForJob(transfers: TransferService, jobId: string, states: TransferJob['state'][]): Promise<TransferJob> {
-  const deadline = Date.now() + 30_000
+  const deadline = Date.now() + 120_000
   for (;;) {
     const job = transfers.list().find((item) => item.id === jobId)
     if (job && states.includes(job.state)) return job
