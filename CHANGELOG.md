@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Added bilingual Chinese/English README and complete user guides.
+- Added a fail-closed Authenticode build workflow, signature/timestamp verification, and bilingual signing operations documentation.
+- Routed legacy and modern minimatch consumers through patched `brace-expansion` 5.0.8 compatibility exports to resolve CVE-2026-14257.
+
 ## 1.0.0 — 2026-07-25
 
 ### Added

@@ -23,3 +23,13 @@ The development specification is the highest-level contract. Milestones are sequ
 - The manual acceptance script covers a real Linux host, host-key acceptance/mismatch, credentials, terminal programs, SFTP edge cases, tunnel recovery, suspend/resume, native drag/drop fallback, Codex login, tray behavior, and clean Windows installation.
 - No unexplained TODO, FIXME, placeholder/disabled feature control, mock production data, or hard-coded laboratory default remains.
 - Documentation, changelog, artifact hashes, known limitations, commits, and Draft PR are ready.
+
+## Post-release public/signing hardening — 2026-07-25
+
+- [x] Rewrite the README and full user guide in Simplified Chinese and English.
+- [x] Add a fail-closed Authenticode build, signer/timestamp verification, signing runbook, and private vulnerability-reporting policy.
+- [x] Scan the full Git history and existing Actions logs for credential-shaped tokens, private keys, real user paths, and unsafe release artifacts before changing visibility.
+- [x] Resolve CVE-2026-14257 by routing minimatch 3/5/9/10 through the patched upstream `brace-expansion` 5.0.8 implementation, then verify every compatibility shape.
+- [x] Re-run frozen install, `pnpm verify`, Electron E2E, dependency audit, Windows packaging, portable launch, and clean NSIS installation.
+- [ ] Supply a trusted Authenticode certificate and password, produce a signed build, and verify the publisher plus RFC 3161 timestamps.
+- [ ] Publish the documentation/security commit, observe CI, enable private vulnerability reporting, and change the repository visibility to public.

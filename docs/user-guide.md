@@ -1,59 +1,27 @@
-# RemoteDeck v1.0 用户指南
+# RemoteDeck User Guide / 用户指南
 
-## 1. 安装与首次启动
+Choose a language:
 
-Windows 10/11 x64 用户可运行 NSIS 安装器或 portable EXE。应用本身包含 Electron/Node 运行时，目标电脑无需另装 Node.js。安装包未签名时，Windows 可能显示未知发布者；先核对 SHA-256，再从系统提示中选择继续。
+- [简体中文用户指南](user-guide.zh-CN.md)
+- [English user guide](user-guide.en.md)
 
-首次引导提供两条真实路径：添加一台主机，或迁移 LabPulse SSH v0.1.0。迁移只读取你通过系统对话框选择的 `config.json`，先预览后导入，相同文件不会重复导入。旧清理命令以禁用状态保留。
+Related release documentation:
 
-## 2. 添加并连接主机
+- [代码签名 / Code signing](code-signing.md)
+- [安全模型 / Security model](security.md)
+- [测试矩阵 / Test matrix](testing.md)
+- [已知限制 / Known limitations](known-limitations.md)
 
-在“主机”中填写别名、主机名/IP、端口、用户名和可选工作目录。认证方式包括：
+---
 
-- 密码：每次需要时输入，仅驻留内存。
-- 交互问答：服务端问题在连接对话中回答，仅驻留内存。
-- 私钥：先通过系统文件选择器扫描；加密私钥的口令仅驻留内存。
-- Windows OpenSSH agent：使用当前用户 agent 中的密钥。
+请选择语言：
 
-可选跳板机只支持一层。首次连接会显示算法、SHA-256 指纹和目标地址；请在独立可信渠道核对后接受。已信任主机的密钥变化会硬失败，必须先调查并手动移除旧记录。
+- [简体中文用户指南](user-guide.zh-CN.md)
+- [English user guide](user-guide.en.md)
 
-“部署公钥”会远端原子更新 `authorized_keys`、去重相同密钥，并用新密钥建立一次全新连接验证后才切换默认认证。
+相关发布文档：
 
-## 3. 终端
-
-连接主机后进入“终端”并新建标签。每个标签对应真实 SSH PTY，支持 bash、vim、tmux、btop、Unicode/IME、窗口尺寸同步、滚屏搜索、Ctrl+C 和文本剪贴板。关闭的普通 PTY 不可恢复其进程；需要持久任务时使用 tmux。链接仅允许 HTTP(S)，仍应在打开前检查目标。
-
-快捷键：`Ctrl+1…7` 切换活动区，`Ctrl+Shift+T` 新终端，`Ctrl+J` 任务中心，`Ctrl+,` 设置。
-
-## 4. 文件
-
-“文件”使用 SFTP，不通过 shell 拼接路径。可显示隐藏文件、新建、重命名、删除、拖放上传和选择目录下载。冲突可选跳过、覆盖或重命名；大文件显示字节、速度和状态，可取消/重试。递归操作不跟随符号链接，取消只清理当前传输拥有的临时文件。
-
-## 5. 隧道
-
-可保存 LocalForward 或 RemoteForward。每条活动隧道使用独立 SSH 连接，不会占用终端；支持 TCP/HTTP 健康检查、失败退避和网络恢复。普通端口冲突绝不会终止其他进程。Clash/Mihomo 探测是只读的，出现多个候选时必须自行选择并确认远端端口。
-
-## 6. 监控与进程
-
-监控会将随包 Python collector 通过已认证 SSH channel 的 stdin 发送给远端 `python3 -u -`，不会安装远端文件。JSONL 数据在主进程严格校验并按设置保留。没有 Python、GPU 工具或 btop 时会显示明确降级，而非伪造数据。
-
-只能向最新快照中属于当前 SSH 用户、且经新鲜 `ps` 查询再次匹配的进程发送信号。SIGKILL 必须先对同一进程执行近期 SIGTERM，再二次确认。
-
-## 7. 命令与 Codex
-
-命令预设可设为全局或主机专属。点击运行前，主进程重新读取最终命令并计算实际风险：L0 只读命令可直接运行；L1 显示目标和命令并要求确认；L2 还要求输入指定文字。PTY 命令进入普通终端，非 PTY 命令在任务中心显示有界输出并可取消。
-
-Codex 面板只执行固定能力探测和官方 CLI 命令。安装计划显示官方安装脚本并要求确认；登录使用设备认证或 SSH PTY。RemoteDeck 不读取 `auth.json`、不接收 token、不解析 TUI 内容，也不添加绕过 sandbox 的参数。稳定 tmux 会话名由主机与工作区身份派生。
-
-## 8. 托盘、退出与诊断
-
-默认关闭窗口只是隐藏到托盘，SSH、传输与隧道继续由主进程维护。托盘“完全退出”才释放终端、传输、监控、隧道和连接。可在设置中关闭托盘常驻或启用登录后隐藏启动。
-
-设置中的“导出诊断包”通过系统保存对话框生成 ZIP，包含版本、运行能力、脱敏设置摘要、匿名化 profile 统计和最多 5 个、每个最多 512 KiB 的最近日志。它不包含终端/SFTP 内容、端点标识、密码、私钥、口令或 Codex token；写盘前还会进行二次秘密扫描。
-
-## 9. 故障排查
-
-1. 先看主机/隧道/任务中心的明确状态与错误。
-2. 不要绕过主机密钥变化；先在服务端控制台核对新指纹。
-3. 导出诊断包并核对内容后再交给维护者。
-4. 查阅 [`known-limitations.md`](known-limitations.md) 与对应功能文档。
+- [代码签名 / Code signing](code-signing.md)
+- [安全模型 / Security model](security.md)
+- [测试矩阵 / Test matrix](testing.md)
+- [已知限制 / Known limitations](known-limitations.md)

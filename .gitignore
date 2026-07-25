@@ -13,3 +13,8 @@ test-results/
 .env
 .env.*
 !.env.example
+*.pfx
+*.p12
+*.p8
+*.pem
+*.key

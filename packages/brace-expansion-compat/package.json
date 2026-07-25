@@ -1,0 +1,18 @@
+{
+  "name": "@remotedeck/brace-expansion-compat",
+  "version": "5.0.8",
+  "private": true,
+  "description": "Compatibility facade exposing patched brace-expansion 5.0.8 to legacy and modern minimatch consumers",
+  "license": "MIT",
+  "main": "index.cjs",
+  "exports": {
+    ".": "./index.cjs",
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "brace-expansion-modern": "npm:brace-expansion@5.0.8"
+  }
+}

@@ -1,7 +1,7 @@
 # Known limitations — v1.0.0
 
 - Windows 10/11 x64 is the supported desktop target. macOS, Linux desktop and ARM64 packages are outside v1.
-- The current release candidate is not Authenticode-signed because no code-signing certificate was supplied. SmartScreen may warn; verify SHA-256 before running.
+- The initial v1.0.0 assets are not Authenticode-signed because no trusted code-signing identity was available at publication time. SmartScreen may warn; verify SHA-256 before running. The repository now has a fail-closed signed-build workflow, but an asset is considered signed only when its Release explicitly says so and Authenticode reports `Valid`.
 - ProxyJump is intentionally limited to one level. More complex chains can be represented in external OpenSSH configuration but are not managed by the v1 profile editor.
 - Closing a plain SSH PTY ends that remote shell. Use the Codex tmux workflow or your own tmux/screen session for persistence.
 - Structured monitoring requires remote `python3`. GPU fields depend on available vendor tools; btop is optional. Missing capabilities degrade explicitly.

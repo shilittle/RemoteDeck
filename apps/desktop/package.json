@@ -19,7 +19,9 @@
     "test:e2e": "pnpm ensure:electron && pnpm build && playwright test",
     "build": "electron-vite build",
     "generate:assets": "node scripts/generate-icons.mjs",
-    "dist:win": "pnpm ensure:electron && pnpm generate:assets && pnpm build && electron-builder --win nsis portable --x64"
+    "dist:win": "pnpm ensure:electron && pnpm generate:assets && pnpm build && electron-builder --win nsis portable --x64",
+    "dist:win:signed": "pnpm ensure:electron && pnpm generate:assets && pnpm build && electron-builder --win nsis portable --x64 --config.forceCodeSigning=true",
+    "verify:signatures": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/verify-signatures.ps1"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.10.0",
