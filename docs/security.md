@@ -34,4 +34,4 @@ Legacy migration reads only a native-picker path passed through its dedicated IP
 
 ## Trust boundaries still requiring user action
 
-RemoteDeck cannot decide whether an unknown host key belongs to the intended server, provide a user's SSH secret, authorize a code-signing identity, or perform a real Codex account login. Those actions require explicit user confirmation or input; tests use local SSH fixtures and mocked external account boundaries.
+RemoteDeck cannot decide whether an unknown host key belongs to the intended server, provide a user's SSH secret, or perform a real Codex account login. Those actions require explicit user confirmation or input; tests use local SSH fixtures and mocked external account boundaries.

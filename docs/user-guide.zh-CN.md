@@ -6,22 +6,13 @@
 
 RemoteDeck 支持 Windows 10/11 x64，本地应用已包含 Electron/Node 运行时。远端目标应为运行 OpenSSH Server 的 Linux；监控需要 `python3`，GPU 与 btop 功能会按远端能力显式降级。
 
-从 GitHub Release 下载 NSIS 安装器或 portable EXE，并完成两项检查：
+从 GitHub Release 下载 NSIS 安装器或 portable EXE，然后计算 SHA-256，并与 Release 说明逐字核对：
 
-1. 在文件属性的“数字签名”页确认签名有效，或运行：
+```powershell
+Get-FileHash .\RemoteDeck-*-win-x64-setup.exe -Algorithm SHA256
+```
 
-   ```powershell
-   Get-AuthenticodeSignature .\RemoteDeck-*-win-x64-setup.exe |
-     Format-List Status,StatusMessage,SignerCertificate,TimeStamperCertificate
-   ```
-
-2. 计算 SHA-256，并与 Release 说明核对：
-
-   ```powershell
-   Get-FileHash .\RemoteDeck-*-win-x64-setup.exe -Algorithm SHA256
-   ```
-
-只有 Release 明确标为“已签名”且 Authenticode 状态为 `Valid` 时，才应将其视为签名构建。初始 v1.0.0 资产未签名，可能触发 SmartScreen 未知发布者警告。
+RemoteDeck v1.x 官方资产当前不提供代码签名，可能触发 SmartScreen“未知发布者”警告。请只从本仓库的 Release 页面下载，不要把第三方镜像中的同名文件视为官方构建。
 
 ## 2. 安装与首次启动
 
@@ -137,7 +128,7 @@ Codex 面板只执行固定能力探测和当前安装版本公开支持的稳�
 1. 查看主机、隧道和任务中心中的明确状态与错误。
 2. 不要绕过主机密钥变化；先从服务端控制台核对新指纹。
 3. 确认远端 OpenSSH、`python3` 与目标端口可用。
-4. 对签名问题运行 `Get-AuthenticodeSignature`；对下载损坏运行 `Get-FileHash`。
+4. 对下载损坏或来源不明问题运行 `Get-FileHash`，并与 Release 说明中的 SHA-256 核对。
 5. 导出并人工检查诊断包后，再通过 GitHub Issue 提交。
 6. 查阅[已知限制](known-limitations.md)与对应功能文档。
 

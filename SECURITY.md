@@ -15,7 +15,6 @@
 - 密码、私钥、私钥口令或 SSH agent 内容。
 - 主机地址、用户名、真实主机指纹或组织内部路径。
 - Codex/OpenAI token、`~/.codex/auth.json` 或其他账户凭据。
-- 代码签名证书、私钥、Base64 PFX 或证书口令。
 
 报告中请提供受影响版本、Windows/远端 Linux 版本、可最小化的复现步骤、预期与实际结果，以及已经脱敏的诊断信息。维护者会先确认收到，再评估影响与修复计划。请在修复发布前避免公开披露可利用细节。
 
@@ -34,7 +33,6 @@ Prefer **Report a vulnerability** on the repository's **Security** page. Do not 
 - Passwords, private keys, key passphrases, or SSH agent contents.
 - Host addresses, usernames, real host fingerprints, or internal organization paths.
 - Codex/OpenAI tokens, `~/.codex/auth.json`, or other account credentials.
-- Code-signing certificates, private keys, Base64 PFX content, or certificate passwords.
 
 Include the affected version, Windows and remote Linux versions, minimized reproduction steps, expected and actual results, and only redacted diagnostics. Maintainers will acknowledge the report before assessing impact and remediation. Avoid public disclosure of exploitable details until a fix is available.
 

@@ -6,22 +6,13 @@
 
 RemoteDeck supports Windows 10/11 x64 and includes its Electron/Node runtime. Remote targets must be Linux systems running OpenSSH Server. Structured monitoring requires `python3`; GPU and btop features degrade explicitly when their tools are unavailable.
 
-Download either the NSIS installer or portable EXE from GitHub Releases, then perform both checks:
+Download either the NSIS installer or portable EXE from GitHub Releases, then calculate SHA-256 and compare it exactly with the Release notes:
 
-1. Confirm a valid signature on the file's **Digital Signatures** property page, or run:
+```powershell
+Get-FileHash .\RemoteDeck-*-win-x64-setup.exe -Algorithm SHA256
+```
 
-   ```powershell
-   Get-AuthenticodeSignature .\RemoteDeck-*-win-x64-setup.exe |
-     Format-List Status,StatusMessage,SignerCertificate,TimeStamperCertificate
-   ```
-
-2. Calculate SHA-256 and compare it with the Release notes:
-
-   ```powershell
-   Get-FileHash .\RemoteDeck-*-win-x64-setup.exe -Algorithm SHA256
-   ```
-
-Treat a build as signed only when its Release explicitly says so and Authenticode reports `Valid`. The initial v1.0.0 assets are unsigned and may trigger a Windows SmartScreen unknown-publisher warning.
+Official RemoteDeck v1.x assets are currently distributed without code signing and may trigger a Windows SmartScreen unknown-publisher warning. Download only from this repository's Releases page; do not treat same-named files from third-party mirrors as official builds.
 
 ## 2. Installation and first run
 
@@ -137,7 +128,7 @@ The archive excludes terminal/SFTP content, endpoint identities, passwords, priv
 1. Read the explicit state and error in Hosts, Tunnels, or Task Center.
 2. Never bypass a changed host key; verify the new fingerprint from the server console.
 3. Confirm remote OpenSSH, `python3`, and required ports are available.
-4. Run `Get-AuthenticodeSignature` for signing problems and `Get-FileHash` for download corruption.
+4. Run `Get-FileHash` for download corruption or source concerns, then compare the SHA-256 with the Release notes.
 5. Export and inspect diagnostics before attaching them to a GitHub Issue.
 6. Review [known limitations](known-limitations.md) and the feature-specific documentation.
 

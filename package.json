@@ -1,6 +1,6 @@
 {
   "name": "remotedeck",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "A Windows SSH workspace for Linux remote-development workflows",
   "license": "MIT",
@@ -18,8 +18,6 @@
     "test:e2e": "pnpm --filter @remotedeck/desktop test:e2e",
     "build": "pnpm --filter @remotedeck/desktop build",
     "dist:win": "pnpm --filter @remotedeck/desktop dist:win",
-    "dist:win:signed": "pnpm --filter @remotedeck/desktop dist:win:signed",
-    "verify:signatures": "pnpm --filter @remotedeck/desktop verify:signatures",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm build"
   }
 }

@@ -1,12 +1,12 @@
-# RemoteDeck v1.0.0 release candidate artifacts
+# RemoteDeck v1.0.1 release artifacts
 
-Generated on Windows x64 with Electron 43.2.0 and electron-builder 26.15.3. Files under `apps/desktop/release` are generated and intentionally not committed.
+Generated on Windows x64 with Electron 43.2.0 and electron-builder 26.15.3. The artifacts are intentionally unsigned (`Get-AuthenticodeSignature` reports `NotSigned`). Files under `apps/desktop/release` are generated and intentionally not committed.
 
 | Artifact | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `RemoteDeck-1.0.0-win-x64-portable.exe` | 112,851,963 | `63d28c345f28791734dc7f1df68855346a6397354db22d897d8a5578fd9db5d7` |
-| `RemoteDeck-1.0.0-win-x64-setup.exe` | 113,065,259 | `5cda4aff7ab47522d81bbef9e9fe05b36e84708a1270b8456250ebc7af6209ec` |
-| `RemoteDeck-1.0.0-win-x64-setup.exe.blockmap` | 119,297 | `1e95d6262a6e10810836712b17dd8f0e900c049cf121999681c7f8ad56a49948` |
+| `RemoteDeck-1.0.1-win-x64-portable.exe` | 112,852,050 | `dabcf20a26b0e78ec43884f0aa20a1924099a00da8045815d0b36b09a8fa6694` |
+| `RemoteDeck-1.0.1-win-x64-setup.exe` | 113,065,350 | `209cf03ab20da62bb6208e737acffc2bb3f8935a11db6842b8f615a38e3b342d` |
+| `RemoteDeck-1.0.1-win-x64-setup.exe.blockmap` | 119,306 | `8a2a7f96f0dd841de219f90e76043d7de4f45f81947a99cd401bef3c83615ce0` |
 
 Local release evidence:
 

@@ -24,12 +24,12 @@ The development specification is the highest-level contract. Milestones are sequ
 - No unexplained TODO, FIXME, placeholder/disabled feature control, mock production data, or hard-coded laboratory default remains.
 - Documentation, changelog, artifact hashes, known limitations, commits, and Draft PR are ready.
 
-## Post-release public/signing hardening — 2026-07-25
+## v1.0.1 public-release hardening — 2026-07-25
 
 - [x] Rewrite the README and full user guide in Simplified Chinese and English.
-- [x] Add a fail-closed Authenticode build, signer/timestamp verification, signing runbook, and private vulnerability-reporting policy.
+- [x] Document the intentionally unsigned distribution, SHA-256 verification, and private vulnerability-reporting policy.
 - [x] Scan the full Git history and existing Actions logs for credential-shaped tokens, private keys, real user paths, and unsafe release artifacts before changing visibility.
 - [x] Resolve CVE-2026-14257 by routing minimatch 3/5/9/10 through the patched upstream `brace-expansion` 5.0.8 implementation, then verify every compatibility shape.
 - [x] Re-run frozen install, `pnpm verify`, Electron E2E, dependency audit, Windows packaging, portable launch, and clean NSIS installation.
-- [ ] Supply a trusted Authenticode certificate and password, produce a signed build, and verify the publisher plus RFC 3161 timestamps.
 - [x] Publish the documentation/security commit, observe CI, enable secret scanning/push protection, Dependabot security updates, and private vulnerability reporting, then change the repository visibility to public.
+- [ ] Publish the tested unsigned v1.0.1 NSIS and portable assets with exact SHA-256 values, then download and verify the uploaded copies.

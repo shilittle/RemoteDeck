@@ -21,7 +21,7 @@ RemoteDeck 是面向 Linux 服务器的安全型 Windows SSH 工作台，将可�
 | `RemoteDeck-<版本>-win-x64-portable.exe` | 直接运行；配置保存在当前 Windows 用户的应用数据目录 |
 | `RemoteDeck-<版本>-win-x64-setup.exe.blockmap` | 发布/更新元数据，普通用户无需手动打开 |
 
-> 发布页会列出 SHA-256 与代码签名状态。只有 Authenticode 验证为 `Valid`、发布者与发布说明一致的构建才会标记为“已签名”。v1.0.0 初始资产未签名，Windows SmartScreen 可能显示未知发布者。
+> RemoteDeck v1.x 官方资产当前不提供代码签名，Windows SmartScreen 可能显示“未知发布者”。请只从本仓库的 Release 页面下载，并将文件 SHA-256 与发布说明逐字核对。
 
 ### 核心能力
 
@@ -37,7 +37,7 @@ RemoteDeck 是面向 Linux 服务器的安全型 Windows SSH 工作台，将可�
 
 ### 快速开始
 
-1. 从 Release 下载并验证 Authenticode 签名和 SHA-256。
+1. 从 Release 下载并验证 SHA-256；当前资产未签名。
 2. 启动 RemoteDeck，选择“添加主机”或“迁移 LabPulse SSH v0.1.0”。
 3. 填写主机地址、端口、用户名、认证方式和可选工作目录。
 4. 通过独立可信渠道核对首次显示的 SHA-256 主机指纹，然后接受。
@@ -55,17 +55,6 @@ pnpm test:e2e
 pnpm dist:win
 ```
 
-签名发布还需要受信任的 Authenticode `.pfx/.p12` 证书：
-
-```powershell
-$env:WIN_CSC_LINK = '<证书路径或 Base64>'
-$env:WIN_CSC_KEY_PASSWORD = '<证书口令>'
-pnpm dist:win:signed
-pnpm verify:signatures
-```
-
-证书和口令不得提交到仓库。详细流程见[代码签名指南](docs/code-signing.md)。
-
 ## English
 
 ### Downloads and requirements
@@ -81,7 +70,7 @@ pnpm verify:signatures
 | `RemoteDeck-<version>-win-x64-portable.exe` | Runs directly; settings remain in the current Windows user's application-data directory |
 | `RemoteDeck-<version>-win-x64-setup.exe.blockmap` | Release/update metadata; users do not open it manually |
 
-> Every release states its SHA-256 values and signing status. A build is described as signed only when Authenticode reports `Valid` and the publisher matches the release notes. The initial v1.0.0 assets are unsigned, so Windows SmartScreen may show an unknown-publisher warning.
+> Official RemoteDeck v1.x assets are currently distributed without code signing, so Windows SmartScreen may show an unknown-publisher warning. Download only from this repository's Releases page and compare the file's SHA-256 exactly with the release notes.
 
 ### Highlights
 
@@ -97,7 +86,7 @@ pnpm verify:signatures
 
 ### Quick start
 
-1. Download a Release and verify its Authenticode signature and SHA-256.
+1. Download a Release and verify its SHA-256; current assets are unsigned.
 2. Start RemoteDeck and choose either “Add host” or “Migrate LabPulse SSH v0.1.0.”
 3. Enter the host, port, username, authentication method, and optional working directory.
 4. Compare the first-use SHA-256 host fingerprint through an independent trusted channel, then accept it.
@@ -115,21 +104,9 @@ pnpm test:e2e
 pnpm dist:win
 ```
 
-A trusted Authenticode `.pfx/.p12` certificate is required for signed releases:
-
-```powershell
-$env:WIN_CSC_LINK = '<certificate path or Base64>'
-$env:WIN_CSC_KEY_PASSWORD = '<certificate password>'
-pnpm dist:win:signed
-pnpm verify:signatures
-```
-
-Never commit the certificate or password. See the [code-signing guide](docs/code-signing.md).
-
 ## Documentation / 文档
 
 - [User guide / 用户指南](docs/user-guide.md)
-- [Code signing / 代码签名](docs/code-signing.md)
 - [Architecture / 架构](docs/architecture.md)
 - [Security policy / 安全策略](SECURITY.md), [security model / 安全模型](docs/security.md), and [v1.0 security audit / 安全审计](docs/security-audit.md)
 - [SSH](docs/ssh.md), [terminal / 终端](docs/terminal.md), [SFTP](docs/sftp.md), [tunnels / 隧道](docs/tunnels.md), [monitoring / 监控](docs/monitoring.md)

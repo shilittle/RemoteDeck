@@ -172,13 +172,13 @@ describe('Docker OpenSSH password-to-key lifecycle', () => {
     try {
       await expect(tunnels.start(localTunnel.id, { passphrase: 'integration-passphrase' })).resolves.toMatchObject({ state: 'online' })
       await expect(tunnels.start(remoteTunnel.id, { passphrase: 'integration-passphrase' })).resolves.toMatchObject({ state: 'online' })
-      expect((await fetch(`http://127.0.0.1:${String(localForwardPort)}/`)).status).toBe(200)
-      expect(await (await fetch(`http://127.0.0.1:${String(remoteForwardPort)}/`)).text()).toBe('REMOTE_FORWARD_OK')
+      await expect(fetchHttpWithRetry(`http://127.0.0.1:${String(localForwardPort)}/`, '')).resolves.toMatchObject({ status: 200 })
+      await expect(fetchHttpWithRetry(`http://127.0.0.1:${String(remoteForwardPort)}/`, 'REMOTE_FORWARD_OK')).resolves.toMatchObject({ status: 200, body: 'REMOTE_FORWARD_OK' })
       await tunnels.stop(localTunnel.id)
-      expect(await (await fetch(`http://127.0.0.1:${String(remoteForwardPort)}/`)).text()).toBe('REMOTE_FORWARD_OK')
+      await expect(fetchHttpWithRetry(`http://127.0.0.1:${String(remoteForwardPort)}/`, 'REMOTE_FORWARD_OK')).resolves.toMatchObject({ status: 200, body: 'REMOTE_FORWARD_OK' })
       expect((await tunnels.list(profile.host.id)).find((item) => item.profile.id === localTunnel.id)?.state).toBe('stopped')
       await waitForTunnelOnline(tunnels, remoteTunnel.id)
-      expect(await (await fetch(`http://127.0.0.1:${String(remoteForwardPort)}/`)).text()).toBe('REMOTE_FORWARD_OK')
+      await expect(fetchHttpWithRetry(`http://127.0.0.1:${String(remoteForwardPort)}/`, 'REMOTE_FORWARD_OK')).resolves.toMatchObject({ status: 200, body: 'REMOTE_FORWARD_OK' })
     } finally {
       await tunnels.stopAll()
       targetSockets.forEach((socket) => socket.destroy())
@@ -280,6 +280,23 @@ async function waitForTunnelOnline(tunnels: TunnelService, tunnelId: string): Pr
     }
     if (Date.now() >= deadline) throw new Error(`Timed out waiting for a stable tunnel: ${JSON.stringify(snapshot)}`)
     await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+}
+
+async function fetchHttpWithRetry(url: string, expectedBody: string, timeoutMs = 5_000): Promise<{ status: number; body: string }> {
+  const deadline = Date.now() + timeoutMs
+  let lastError: string
+  for (;;) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(2_000) })
+      const body = await response.text()
+      if (response.status === 200 && (expectedBody === '' || body === expectedBody)) return { status: response.status, body }
+      lastError = `HTTP ${String(response.status)} with body ${JSON.stringify(body)}`
+    } catch (error) {
+      lastError = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+    }
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for tunnel traffic at ${url}: ${lastError}`)
+    await new Promise((resolve) => setTimeout(resolve, 100))
   }
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "@remotedeck/desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "A secure Windows SSH workspace for Linux remote-development workflows",
   "author": "RemoteDeck contributors",
@@ -19,9 +19,7 @@
     "test:e2e": "pnpm ensure:electron && pnpm build && playwright test",
     "build": "electron-vite build",
     "generate:assets": "node scripts/generate-icons.mjs",
-    "dist:win": "pnpm ensure:electron && pnpm generate:assets && pnpm build && electron-builder --win nsis portable --x64",
-    "dist:win:signed": "pnpm ensure:electron && pnpm generate:assets && pnpm build && electron-builder --win nsis portable --x64 --config.forceCodeSigning=true",
-    "verify:signatures": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/verify-signatures.ps1"
+    "dist:win": "pnpm ensure:electron && pnpm generate:assets && pnpm build && electron-builder --win nsis portable --x64"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.10.0",

@@ -1,9 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.0.1 — 2026-07-25
 
-- Added bilingual Chinese/English README and complete user guides.
-- Added a fail-closed Authenticode build workflow, signature/timestamp verification, and bilingual signing operations documentation.
+### Changed
+
+- Added a bilingual Chinese/English README and complete user guides.
+- Documented the intentionally unsigned Windows distribution and SHA-256 verification procedure.
+- Published the source repository with a bilingual security policy and coordinated vulnerability-reporting instructions.
+- Made Docker tunnel traffic probes resilient to bounded transient connection resets without weakening their failure timeout.
+
+### Security
+
 - Routed legacy and modern minimatch consumers through patched `brace-expansion` 5.0.8 compatibility exports to resolve CVE-2026-14257.
 
 ## 1.0.0 — 2026-07-25

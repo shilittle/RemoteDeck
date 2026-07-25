@@ -1,33 +1,34 @@
-# RemoteDeck v1.0 release checklist
+# RemoteDeck v1.0.1 release checklist
 
 ## Automated candidate gates
 
-- [x] M0–M9 completed in order with independent commits and green milestone gates.
-- [x] `pnpm verify` green on final tree: 53 unit and 4 integration tests.
-- [x] `pnpm test:e2e` green on final production renderer build: 2/2.
-- [x] `pnpm audit --audit-level high`: no known vulnerabilities.
-- [x] final `pnpm dist:win` produces x64 NSIS and portable artifacts.
-- [x] portable artifact creates a RemoteDeck window with isolated userData.
-- [x] NSIS silently installs to a clean temporary path, launches, uninstalls and removes owned state.
-- [x] packaged fuse readback matches `security-audit.md`.
-- [x] artifact sizes and SHA-256 captured in `release-manifest.md`.
-- [x] source audit has no unexplained TODO/FIXME/mock data/disabled shell or production legacy port/path default.
+- [x] Clean frozen dependency installation succeeds.
+- [x] `pnpm verify` is green on the final v1.0.1 tree: 53 unit and 4 integration tests.
+- [x] `pnpm test:e2e` is green on the final production renderer build: 2/2.
+- [x] `pnpm audit --audit-level high` reports no known vulnerabilities.
+- [x] `pnpm dist:win` produces the unsigned x64 NSIS and portable artifacts.
+- [x] The portable artifact creates a RemoteDeck window with isolated userData.
+- [x] NSIS silently installs to a clean temporary path, launches, uninstalls, and removes owned state.
+- [x] Packaged fuse readback matches `security-audit.md`.
+- [x] Artifact sizes and SHA-256 are captured in `release-manifest.md`.
+- [x] Source audit has no unexplained TODO/FIXME/mock data/disabled shell or production legacy port/path default.
 
 ## Docker/real SSH acceptance
 
-- [x] CI Docker OpenSSH job green: direct + ProxyJump, host key, password/key, `authorized_keys`, PTY, SFTP, tunnels, telemetry, btop/process and Codex external-boundary fixture.
+- [ ] CI Docker OpenSSH job green: direct + ProxyJump, host key, password/key, `authorized_keys`, PTY, SFTP, tunnels, telemetry, btop/process and Codex external-boundary fixture.
 - [x] User-authorized real-host procedure is complete in `tests/manual/m9-real-host-acceptance.md`; credentials were not available to this build and are an explicit external boundary.
 - [x] Network/tunnel/tray/full-quit procedure and automated fake/Docker boundaries are complete; real external traffic remains part of the user-authorized checklist.
 - [x] Codex install/login/start/resume/update procedure and mock external account boundary are complete; account approval remains user-controlled.
 
-Real secrets, private-key passphrases, Codex account approval and code-signing credentials are intentionally never scripted. The checked-in Docker fixture and mock account boundary cover all other paths.
+Real secrets, private-key passphrases, and Codex account approval are intentionally never scripted. The checked-in Docker fixture and mock account boundary cover all other paths.
 
 ## Publication
 
-- [x] M9 documentation and release candidate commit created.
-- [x] Branch pushed when GitHub authentication is available.
-- [x] Draft PR opened; CI observed and failures fixed.
-- [x] Draft PR remained unmerged and no formal Release was published before explicit user authorization.
-- [x] Explicit user authorization received on 2026-07-25 to fast-forward `main` and publish the `v1.0.0` Release.
+- [x] Explicit user authorization received on 2026-07-25 to publish an unsigned v1.0.1 directly to public `main`.
+- [ ] Final v1.0.1 commit is pushed to `main` after all candidate checks pass.
+- [ ] All required GitHub Actions jobs are green on the exact release commit.
+- [ ] The `v1.0.1` tag and bilingual Release point to the exact tested `main` commit.
+- [ ] NSIS, portable, and blockmap assets are uploaded with exact SHA-256 values.
+- [ ] Uploaded assets are downloaded again and their size and SHA-256 match the local manifest.
 
-Final pre-publication evidence is the green check rollup on Draft PR [#1](https://github.com/shilittle/RemoteDeck/pull/1): Ubuntu/Windows quality, two-container Docker OpenSSH direct/ProxyJump acceptance, Electron E2E, NSIS/portable packaging, both packaged launch smokes and artifact upload. Publication to `main` and `v1.0.0` is a one-time action under the explicit 2026-07-25 user authorization; RemoteDeck has no automatic merge or formal Release path.
+The v1.0.0 baseline evidence remains in Draft PR [#1](https://github.com/shilittle/RemoteDeck/pull/1). This checklist records the independently rerun v1.0.1 patch validation and the explicit decision to distribute unsigned Windows assets with published SHA-256 values.

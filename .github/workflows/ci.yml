@@ -100,7 +100,7 @@ jobs:
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./tests/manual/m9-clean-install.ps1 -InstallerPath $installer.FullName
       - uses: actions/upload-artifact@v6
         with:
-          name: RemoteDeck-1.0.0-windows-x64
+          name: RemoteDeck-1.0.1-windows-x64
           path: |
             apps/desktop/release/*.exe
             apps/desktop/release/*.blockmap
