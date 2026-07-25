@@ -32,4 +32,4 @@ The development specification is the highest-level contract. Milestones are sequ
 - [x] Resolve CVE-2026-14257 by routing minimatch 3/5/9/10 through the patched upstream `brace-expansion` 5.0.8 implementation, then verify every compatibility shape.
 - [x] Re-run frozen install, `pnpm verify`, Electron E2E, dependency audit, Windows packaging, portable launch, and clean NSIS installation.
 - [x] Publish the documentation/security commit, observe CI, enable secret scanning/push protection, Dependabot security updates, and private vulnerability reporting, then change the repository visibility to public.
-- [ ] Publish the tested unsigned v1.0.1 NSIS and portable assets with exact SHA-256 values, then download and verify the uploaded copies.
+- [x] Publish the tested unsigned v1.0.1 NSIS and portable assets with exact SHA-256 values; confirm GitHub's post-upload sizes/digests and independently stream-verify the blockmap.

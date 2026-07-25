@@ -17,3 +17,9 @@ Local release evidence:
 - `m9-clean-install.ps1`: clean temporary install, window launch and uninstall passed.
 - `electron-fuses read`: runtime escape fuses disabled; cookie encryption/ASAR integrity enabled; file-protocol extra privileges disabled.
 - `pnpm audit --audit-level high`: no known vulnerabilities.
+
+Published-release evidence:
+
+- [`v1.0.1`](https://github.com/shilittle/RemoteDeck/releases/tag/v1.0.1) is the latest non-draft, non-prerelease Release and points to tested commit `8ab1e27589fc2d19f8909ebe4f1304c355d9e11b`.
+- GitHub's post-upload asset API reports the exact byte count and `sha256:` digest above for all three files.
+- An authenticated Asset API stream independently re-downloaded the complete blockmap (119,306 bytes) and reproduced `8a2a7f96f0dd841de219f90e76043d7de4f45f81947a99cd401bef3c83615ce0`.
