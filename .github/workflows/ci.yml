@@ -26,34 +26,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Frontend lint
-        id: frontend_lint
-        continue-on-error: true
-        run: pnpm lint > lint.log 2>&1
-      - name: Upload lint diagnostics
-        if: steps.frontend_lint.outcome == 'failure'
-        uses: actions/upload-artifact@v6
-        with:
-          name: frontend-lint-${{ matrix.os }}
-          path: lint.log
-          if-no-files-found: error
-      - name: Enforce lint result
-        if: steps.frontend_lint.outcome == 'failure'
-        run: exit 1
-      - name: Frontend typecheck
-        id: frontend_typecheck
-        continue-on-error: true
-        run: pnpm typecheck > typecheck.log 2>&1
-      - name: Upload typecheck diagnostics
-        if: steps.frontend_typecheck.outcome == 'failure'
-        uses: actions/upload-artifact@v6
-        with:
-          name: frontend-typecheck-${{ matrix.os }}
-          path: typecheck.log
-          if-no-files-found: error
-      - name: Enforce typecheck result
-        if: steps.frontend_typecheck.outcome == 'failure'
-        run: exit 1
+      - run: pnpm lint
+      - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm test:integration
       - run: pnpm build
@@ -61,8 +35,6 @@ jobs:
   rust-quality:
     name: Rust core (Windows)
     runs-on: windows-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -79,27 +51,32 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal --component rustfmt,clippy
           rustup default stable
-      - name: Rust format
-        id: rustfmt
+      - run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all -- --check
+      - name: Rust tests
+        id: rust_tests
         continue-on-error: true
-        run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all -- --check
-      - name: Commit rustfmt result on migration branch
-        if: github.event_name == 'push' && github.ref == 'refs/heads/agent/tauri2-rewrite' && steps.rustfmt.outcome == 'failure'
-        shell: pwsh
-        run: |
-          cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add apps/desktop/src-tauri/src/*.rs
-          if (-not (git diff --cached --quiet)) {
-            git commit -m "style: format Rust sources"
-            git push origin HEAD:agent/tauri2-rewrite
-          }
-      - name: Enforce rustfmt result
-        if: steps.rustfmt.outcome == 'failure'
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-features > cargo-test.log 2>&1
+      - name: Upload Rust test diagnostics
+        if: steps.rust_tests.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: cargo-test-windows
+          path: cargo-test.log
+          if-no-files-found: error
+      - name: Rust clippy
+        id: rust_clippy
+        continue-on-error: true
+        run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings > clippy.log 2>&1
+      - name: Upload clippy diagnostics
+        if: steps.rust_clippy.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: clippy-windows
+          path: clippy.log
+          if-no-files-found: error
+      - name: Enforce Rust checks
+        if: steps.rust_tests.outcome == 'failure' || steps.rust_clippy.outcome == 'failure'
         run: exit 1
-      - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-features
-      - run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
 
   windows-bundle:
     name: Windows NSIS bundle and size gate
