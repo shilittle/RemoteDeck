@@ -86,7 +86,7 @@ export function HostPanel(): React.JSX.Element {
       </div>
       <div className="security-strip"><div><strong>Host key 信任链</strong><small>首次连接不会自动信任；变更后的 key 会被严格拒绝。</small></div><div className="button-row"><button disabled={!draft.id || actionBusy} onClick={() => void scan()}>扫描指纹</button><button disabled={!draft.id || actionBusy} onClick={() => void test()}>测试连接</button></div></div>
       {candidates.length > 0 && <div className="candidate-list">{candidates.map((candidate) => <div className="candidate" key={`${candidate.algorithm}-${candidate.sha256Fingerprint}`}><div><strong>{candidate.algorithm}</strong><code>{candidate.sha256Fingerprint}</code></div><button className="primary" disabled={actionBusy} onClick={() => void accept(candidate)}>接受此指纹</button></div>)}</div>}
-      {testResult && <div className={testResult.success ? 'result-card success' : 'result-card failed'}><strong>{testResult.success ? `连接成功 · ${testResult.latencyMs} ms` : '连接失败'}</strong><pre>{testResult.serverLine ?? testResult.error ?? ''}</pre></div>}
+      {testResult && <div className={testResult.success ? 'result-card success' : 'result-card failed'}><strong>{testResult.success ? `连接成功 · ${String(testResult.latencyMs)} ms` : '连接失败'}</strong><pre>{testResult.serverLine ?? testResult.error ?? ''}</pre></div>}
       {message && <p className="inline-message">{message}</p>}
     </section>
   )
