@@ -75,6 +75,16 @@ jobs:
           name: rustfmt-windows
           path: rustfmt.log
           if-no-files-found: error
+      - name: Produce rustfmt-corrected sources
+        if: steps.rustfmt.outcome == 'failure'
+        run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all
+      - name: Upload rustfmt-corrected sources
+        if: steps.rustfmt.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: rustfmt-sources
+          path: apps/desktop/src-tauri/src/*.rs
+          if-no-files-found: error
       - name: Enforce rustfmt result
         if: steps.rustfmt.outcome == 'failure'
         run: exit 1
