@@ -56,7 +56,7 @@ jobs:
       - run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
 
   windows-bundle:
-    name: Windows NSIS bundle and size gate
+    name: Windows NSIS bundle, launch smoke and size gate
     runs-on: windows-latest
     needs: [frontend-quality, rust-quality]
     steps:
@@ -76,6 +76,32 @@ jobs:
           rustup default stable
           cargo install tauri-cli --version 2.11.2 --locked
       - run: pnpm dist:win
+      - name: Smoke-launch packaged Tauri binary
+        shell: pwsh
+        run: |
+          $binary = Resolve-Path 'apps/desktop/src-tauri/target/release/remotedeck.exe'
+          $process = Start-Process -FilePath $binary -PassThru
+          try {
+            $windowReady = $false
+            for ($attempt = 0; $attempt -lt 40; $attempt++) {
+              Start-Sleep -Milliseconds 500
+              $process.Refresh()
+              if ($process.HasExited) {
+                throw "RemoteDeck exited before opening a window with code $($process.ExitCode)."
+              }
+              if ($process.MainWindowHandle -ne 0) {
+                $windowReady = $true
+                break
+              }
+            }
+            if (-not $windowReady) { throw 'RemoteDeck process stayed alive but did not create a main window.' }
+            Write-Host "RemoteDeck main window handle: $($process.MainWindowHandle)"
+          } finally {
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+              $process.WaitForExit()
+            }
+          }
       - name: Enforce lightweight installer
         shell: pwsh
         run: |
