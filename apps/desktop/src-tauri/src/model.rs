@@ -232,7 +232,6 @@ pub struct CommandResult {
 #[serde(rename_all = "lowercase")]
 pub enum TerminalState {
     Running,
-    Closed,
 }
 
 #[derive(Debug, Clone, Serialize)]

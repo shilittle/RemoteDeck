@@ -4,7 +4,7 @@ use crate::{
     ssh::SshRuntime,
 };
 use parking_lot::{Mutex, RwLock};
-use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, PtySystem, native_pty_system};
+use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use std::{
     collections::HashMap,
     io::{Read, Write},

@@ -52,7 +52,7 @@ impl TunnelRegistry {
             },
         );
         let stderr_buffer = Arc::new(Mutex::new(String::new()));
-        if let Some(mut stderr) = stderr {
+        if let Some(stderr) = stderr {
             let buffer = stderr_buffer.clone();
             thread::spawn(move || {
                 let mut bytes = Vec::new();

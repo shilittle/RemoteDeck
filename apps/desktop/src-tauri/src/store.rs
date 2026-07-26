@@ -17,7 +17,6 @@ use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct AppRepository {
-    directory: PathBuf,
     state_path: PathBuf,
     known_hosts_path: PathBuf,
     state: Arc<RwLock<PersistedState>>,
@@ -46,15 +45,10 @@ impl AppRepository {
             initial
         };
         Ok(Self {
-            directory,
             state_path,
             known_hosts_path,
             state: Arc::new(RwLock::new(state)),
         })
-    }
-
-    pub fn app_data_directory(&self) -> &Path {
-        &self.directory
     }
     pub fn known_hosts_path(&self) -> &Path {
         &self.known_hosts_path
