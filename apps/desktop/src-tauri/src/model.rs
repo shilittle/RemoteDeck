@@ -38,12 +38,24 @@ pub struct SshAdvancedPatch {
 
 impl SshAdvancedPatch {
     pub fn apply_to(self, mut value: SshAdvancedOptions) -> SshAdvancedOptions {
-        if let Some(next) = self.connect_timeout_seconds { value.connect_timeout_seconds = next; }
-        if let Some(next) = self.server_alive_interval_seconds { value.server_alive_interval_seconds = next; }
-        if let Some(next) = self.server_alive_count_max { value.server_alive_count_max = next; }
-        if let Some(next) = self.tcp_keep_alive { value.tcp_keep_alive = next; }
-        if let Some(next) = self.compression { value.compression = next; }
-        if let Some(next) = self.identities_only { value.identities_only = next; }
+        if let Some(next) = self.connect_timeout_seconds {
+            value.connect_timeout_seconds = next;
+        }
+        if let Some(next) = self.server_alive_interval_seconds {
+            value.server_alive_interval_seconds = next;
+        }
+        if let Some(next) = self.server_alive_count_max {
+            value.server_alive_count_max = next;
+        }
+        if let Some(next) = self.tcp_keep_alive {
+            value.tcp_keep_alive = next;
+        }
+        if let Some(next) = self.compression {
+            value.compression = next;
+        }
+        if let Some(next) = self.identities_only {
+            value.identities_only = next;
+        }
         value
     }
 }
@@ -86,7 +98,10 @@ pub struct HostDraft {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum TunnelDirection { Local, Remote }
+pub enum TunnelDirection {
+    Local,
+    Remote,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -155,7 +170,12 @@ pub struct PersistedState {
 
 impl Default for PersistedState {
     fn default() -> Self {
-        Self { schema_version: 2, settings: AppSettings::default(), hosts: Vec::new(), tunnels: Vec::new() }
+        Self {
+            schema_version: 2,
+            settings: AppSettings::default(),
+            hosts: Vec::new(),
+            tunnels: Vec::new(),
+        }
     }
 }
 
@@ -210,7 +230,10 @@ pub struct CommandResult {
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum TerminalState { Running, Closed }
+pub enum TerminalState {
+    Running,
+    Closed,
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -223,7 +246,12 @@ pub struct TerminalSnapshot {
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum TerminalEventKind { Started, Output, Exit, Error }
+pub enum TerminalEventKind {
+    Started,
+    Output,
+    Exit,
+    Error,
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -237,7 +265,12 @@ pub struct TerminalEvent {
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum TunnelRuntimeState { Stopped, Starting, Running, Failed }
+pub enum TunnelRuntimeState {
+    Stopped,
+    Starting,
+    Running,
+    Failed,
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
