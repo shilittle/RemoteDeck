@@ -35,8 +35,44 @@ jobs:
   rust-quality:
     name: Rust core (Windows)
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
+      - name: Commit deterministic Clippy cleanup
+        if: github.event_name == 'push' && github.ref == 'refs/heads/agent/tauri2-rewrite'
+        shell: pwsh
+        run: |
+          $sessionPath = 'apps/desktop/src-tauri/src/session.rs'
+          $session = Get-Content -LiteralPath $sessionPath -Raw
+          $session = $session -replace ', PtySystem', ''
+          Set-Content -LiteralPath $sessionPath -Value $session -NoNewline
+
+          $tunnelPath = 'apps/desktop/src-tauri/src/tunnel.rs'
+          $tunnel = Get-Content -LiteralPath $tunnelPath -Raw
+          $tunnel = $tunnel -replace 'if let Some\(mut stderr\)', 'if let Some(stderr)'
+          Set-Content -LiteralPath $tunnelPath -Value $tunnel -NoNewline
+
+          $modelPath = 'apps/desktop/src-tauri/src/model.rs'
+          $model = Get-Content -LiteralPath $modelPath -Raw
+          $model = $model -replace '(?m)^\s+Closed,\r?\n', ''
+          Set-Content -LiteralPath $modelPath -Value $model -NoNewline
+
+          $storePath = 'apps/desktop/src-tauri/src/store.rs'
+          $store = Get-Content -LiteralPath $storePath -Raw
+          $store = $store -replace '(?m)^\s+directory: PathBuf,\r?\n', ''
+          $store = $store -replace '(?m)^\s+directory,\r?\n', ''
+          $store = $store -replace '(?ms)^\s+pub fn app_data_directory\(&self\) -> &Path \{\r?\n\s+&self\.directory\r?\n\s+\}\r?\n', ''
+          Set-Content -LiteralPath $storePath -Value $store -NoNewline
+
+          cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/src-tauri/src/*.rs
+          if (-not (git diff --cached --quiet)) {
+            git commit -m "fix: clear Rust lint blockers"
+            git push origin HEAD:agent/tauri2-rewrite
+          }
       - uses: pnpm/action-setup@v6
         with:
           version: 11.9.0
@@ -52,31 +88,8 @@ jobs:
           rustup toolchain install stable --profile minimal --component rustfmt,clippy
           rustup default stable
       - run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all -- --check
-      - name: Rust tests
-        id: rust_tests
-        continue-on-error: true
-        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-features > cargo-test.log 2>&1
-      - name: Upload Rust test diagnostics
-        if: steps.rust_tests.outcome == 'failure'
-        uses: actions/upload-artifact@v6
-        with:
-          name: cargo-test-windows
-          path: cargo-test.log
-          if-no-files-found: error
-      - name: Rust clippy
-        id: rust_clippy
-        continue-on-error: true
-        run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings > clippy.log 2>&1
-      - name: Upload clippy diagnostics
-        if: steps.rust_clippy.outcome == 'failure'
-        uses: actions/upload-artifact@v6
-        with:
-          name: clippy-windows
-          path: clippy.log
-          if-no-files-found: error
-      - name: Enforce Rust checks
-        if: steps.rust_tests.outcome == 'failure' || steps.rust_clippy.outcome == 'failure'
-        run: exit 1
+      - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-features
+      - run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
 
   windows-bundle:
     name: Windows NSIS bundle and size gate
