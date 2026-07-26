@@ -24,7 +24,11 @@ export function validateTunnelDraft(draft: TunnelDraft): string | null {
 
 function safeSshAtom(value: string, maxLength: number): boolean {
   const trimmed = value.trim()
-  return trimmed.length > 0 && trimmed.length <= maxLength && !trimmed.startsWith('-') && !/[\s\u0000-\u001f\u007f]/u.test(trimmed)
+  const containsForbiddenCharacter = Array.from(trimmed).some((character) => {
+    const code = character.charCodeAt(0)
+    return /\s/u.test(character) || code <= 0x1f || code === 0x7f
+  })
+  return trimmed.length > 0 && trimmed.length <= maxLength && !trimmed.startsWith('-') && !containsForbiddenCharacter
 }
 
 function safeForwardAtom(value: string): boolean {
