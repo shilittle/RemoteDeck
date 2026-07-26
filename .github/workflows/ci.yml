@@ -40,7 +40,20 @@ jobs:
       - name: Enforce lint result
         if: steps.frontend_lint.outcome == 'failure'
         run: exit 1
-      - run: pnpm typecheck
+      - name: Frontend typecheck
+        id: frontend_typecheck
+        continue-on-error: true
+        run: pnpm typecheck > typecheck.log 2>&1
+      - name: Upload typecheck diagnostics
+        if: steps.frontend_typecheck.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: frontend-typecheck-${{ matrix.os }}
+          path: typecheck.log
+          if-no-files-found: error
+      - name: Enforce typecheck result
+        if: steps.frontend_typecheck.outcome == 'failure'
+        run: exit 1
       - run: pnpm test
       - run: pnpm test:integration
       - run: pnpm build
@@ -48,6 +61,8 @@ jobs:
   rust-quality:
     name: Rust core (Windows)
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -67,24 +82,19 @@ jobs:
       - name: Rust format
         id: rustfmt
         continue-on-error: true
-        run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all -- --check > rustfmt.log 2>&1
-      - name: Upload rustfmt diagnostics
-        if: steps.rustfmt.outcome == 'failure'
-        uses: actions/upload-artifact@v6
-        with:
-          name: rustfmt-windows
-          path: rustfmt.log
-          if-no-files-found: error
-      - name: Produce rustfmt-corrected sources
-        if: steps.rustfmt.outcome == 'failure'
-        run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all
-      - name: Upload rustfmt-corrected sources
-        if: steps.rustfmt.outcome == 'failure'
-        uses: actions/upload-artifact@v6
-        with:
-          name: rustfmt-sources
-          path: apps/desktop/src-tauri/src/*.rs
-          if-no-files-found: error
+        run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all -- --check
+      - name: Commit rustfmt result on migration branch
+        if: github.event_name == 'push' && github.ref == 'refs/heads/agent/tauri2-rewrite' && steps.rustfmt.outcome == 'failure'
+        shell: pwsh
+        run: |
+          cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/src-tauri/src/*.rs
+          if (-not (git diff --cached --quiet)) {
+            git commit -m "style: format Rust sources"
+            git push origin HEAD:agent/tauri2-rewrite
+          }
       - name: Enforce rustfmt result
         if: steps.rustfmt.outcome == 'failure'
         run: exit 1
