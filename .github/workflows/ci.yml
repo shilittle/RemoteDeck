@@ -26,7 +26,20 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
+      - name: Frontend lint
+        id: frontend_lint
+        continue-on-error: true
+        run: pnpm lint > lint.log 2>&1
+      - name: Upload lint diagnostics
+        if: steps.frontend_lint.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: frontend-lint-${{ matrix.os }}
+          path: lint.log
+          if-no-files-found: error
+      - name: Enforce lint result
+        if: steps.frontend_lint.outcome == 'failure'
+        run: exit 1
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm test:integration
@@ -51,7 +64,20 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal --component rustfmt,clippy
           rustup default stable
-      - run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all -- --check
+      - name: Rust format
+        id: rustfmt
+        continue-on-error: true
+        run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all -- --check > rustfmt.log 2>&1
+      - name: Upload rustfmt diagnostics
+        if: steps.rustfmt.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: rustfmt-windows
+          path: rustfmt.log
+          if-no-files-found: error
+      - name: Enforce rustfmt result
+        if: steps.rustfmt.outcome == 'failure'
+        run: exit 1
       - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-features
       - run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
 
