@@ -46,7 +46,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (!event.ctrlKey || event.altKey) return
-      const mapping: Record<string, Activity> = { '1': 'hosts', '2': 'terminal', '3': 'tunnels', '4': 'commands', '5': 'settings' }
+      const mapping: Partial<Record<string, Activity>> = { '1': 'hosts', '2': 'terminal', '3': 'tunnels', '4': 'commands', '5': 'settings' }
       const next = mapping[event.key]
       if (next) { event.preventDefault(); setActivity(next) }
     }
@@ -66,7 +66,7 @@ export function App(): React.JSX.Element {
 
       <nav className="activity-rail" aria-label="工作区导航">
         {activities.map(({ id, label, icon: Icon }, index) => (
-          <button key={id} className={activity === id ? 'activity-button active' : 'activity-button'} onClick={() => setActivity(id)} title={`${label}  Ctrl+${index + 1}`} aria-label={label}>
+          <button key={id} className={activity === id ? 'activity-button active' : 'activity-button'} onClick={() => setActivity(id)} title={`${label}  Ctrl+${String(index + 1)}`} aria-label={label}>
             <Icon size={21} strokeWidth={1.7} />
           </button>
         ))}
@@ -77,7 +77,7 @@ export function App(): React.JSX.Element {
         <div className="host-list">
           {hosts.map((host) => (
             <button key={host.id} className={host.id === selectedHostId ? 'host-item selected' : 'host-item'} onClick={() => selectHost(host.id)}>
-              <span className="status-dot" /><span><strong>{host.alias}</strong><small>{host.username}@{host.hostname}:{host.port}</small></span>
+              <span className="status-dot" /><span><strong>{host.alias}</strong><small>{host.username}@{host.hostname}:{String(host.port)}</small></span>
             </button>
           ))}
           {hosts.length === 0 && <p className="empty-copy">先添加一台 Linux 主机。</p>}
