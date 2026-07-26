@@ -1,8 +1,8 @@
 {
   "name": "remotedeck",
-  "version": "1.0.1",
+  "version": "2.0.0-alpha.1",
   "private": true,
-  "description": "A Windows SSH workspace for Linux remote-development workflows",
+  "description": "A lightweight Tauri 2 SSH workspace for Linux remote-development workflows",
   "license": "MIT",
   "packageManager": "pnpm@11.9.0",
   "engines": {
@@ -11,10 +11,12 @@
   },
   "scripts": {
     "dev": "pnpm --filter @remotedeck/desktop dev",
+    "dev:web": "pnpm --filter @remotedeck/desktop dev:web",
     "lint": "pnpm --filter @remotedeck/desktop lint",
     "typecheck": "pnpm --filter @remotedeck/desktop typecheck",
     "test": "pnpm --filter @remotedeck/desktop test",
     "test:integration": "pnpm --filter @remotedeck/desktop test:integration",
+    "test:integration:openssh": "pnpm --filter @remotedeck/desktop test:integration:openssh",
     "test:e2e": "pnpm --filter @remotedeck/desktop test:e2e",
     "build": "pnpm --filter @remotedeck/desktop build",
     "dist:win": "pnpm --filter @remotedeck/desktop dist:win",
