@@ -22,19 +22,19 @@ interface AppStore {
   capabilities: RuntimeCapabilities | null
   hosts: HostProfile[]
   tunnels: TunnelProfile[]
-  tunnelStates: Record<string, TunnelSnapshot>
+  tunnelStates: Partial<Record<string, TunnelSnapshot>>
   selectedHostId: string | null
-  setActivity(activity: Activity): void
-  selectHost(hostId: string): void
-  clearError(): void
-  reportError(error: unknown): void
-  bootstrap(): Promise<void>
-  saveHost(draft: HostDraft): Promise<HostProfile>
-  deleteHost(hostId: string): Promise<void>
-  saveTunnel(draft: TunnelDraft): Promise<TunnelProfile>
-  deleteTunnel(tunnelId: string): Promise<void>
-  applyTunnelState(snapshot: TunnelSnapshot): void
-  updateSettings(patch: Partial<AppSettings>): Promise<void>
+  setActivity: (activity: Activity) => void
+  selectHost: (hostId: string) => void
+  clearError: () => void
+  reportError: (error: unknown) => void
+  bootstrap: () => Promise<void>
+  saveHost: (draft: HostDraft) => Promise<HostProfile>
+  deleteHost: (hostId: string) => Promise<void>
+  saveTunnel: (draft: TunnelDraft) => Promise<TunnelProfile>
+  deleteTunnel: (tunnelId: string) => Promise<void>
+  applyTunnelState: (snapshot: TunnelSnapshot) => void
+  updateSettings: (patch: Partial<AppSettings>) => Promise<void>
 }
 
 function replaceById<T extends { id: string }>(items: T[], replacement: T): T[] {
