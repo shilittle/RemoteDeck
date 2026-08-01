@@ -225,6 +225,8 @@ jobs:
     needs: [validate-release-source, openssh-integration, windows-build]
     runs-on: windows-latest
     timeout-minutes: 15
+    env:
+      GH_REPO: ${{ github.repository }}
     permissions:
       actions: read
       contents: write
