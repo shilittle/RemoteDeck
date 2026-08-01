@@ -1,12 +1,12 @@
-# Known limitations — v1.0.1
+# Known limitations
 
-- Windows 10/11 x64 is the supported desktop target. macOS, Linux desktop and ARM64 packages are outside v1.
-- RemoteDeck v1.x Windows assets are intentionally not Authenticode-signed. SmartScreen may warn about an unknown publisher; download only from this repository's Releases page and verify the published SHA-256 before running.
-- ProxyJump is intentionally limited to one level. More complex chains can be represented in external OpenSSH configuration but are not managed by the v1 profile editor.
-- Closing a plain SSH PTY ends that remote shell. Use the Codex tmux workflow or your own tmux/screen session for persistence.
-- Structured monitoring requires remote `python3`. GPU fields depend on available vendor tools; btop is optional. Missing capabilities degrade explicitly.
-- SFTP recursive operations deliberately do not follow symbolic links and do not implement rsync-style delta transfer.
-- Codex account login is always interactive and requires the user's external account authorization. RemoteDeck does not store, copy or diagnose Codex credentials.
-- A portable EXE carries the application runtime but, by default, stores settings in the current Windows user's normal application-data directory.
-- Automatic application update is not implemented in v1; download and install updates manually from GitHub Releases.
-- Real-host fingerprint ownership, real passwords/key passphrases, and account login cannot be automated without external user authority.
+- The supported local target is Windows 10/11 x64. Remote targets are Linux systems reachable through OpenSSH.
+- The repository currently configures no Authenticode signing. For any published installer, inspect the recorded signature status; an unsigned build may show a SmartScreen unknown-publisher warning, and SHA-256 verifies bytes rather than publisher identity.
+- RemoteDeck intentionally configures no portable target. The NSIS target uses system WebView2 or its download bootstrapper; the exact candidate must pass the documented size gate before publication.
+- Interactive credentials are terminal-only. SFTP, tunnels, telemetry, probes, key deployment, and background commands use OpenSSH batch mode and require a usable private key or ssh-agent.
+- Structured telemetry requires remote `python3`. NVIDIA data requires `nvidia-smi`; btop features require `btop`, `tmux`, and `timeout`. Missing tools produce an explicit degraded or unavailable state. A hard app/network crash or bounded shutdown timeout cannot guarantee removal of a remote tmux watchdog. A later btop start from the same retained app-data installation can recognize and adopt its stable ownership marker; only then can explicit stop manage it.
+- ProxyJump supports one saved, direct-connect host profile. The jump must authenticate non-interactively, and first-time target discovery requires `ssh-keyscan` on the jump. Nested chains are intentionally rejected. RemoteDeck does not recursively import `Include` files, wildcard hosts, `Match` blocks, or arbitrary directives from OpenSSH config.
+- RemoteForward reachability beyond the SSH server depends on that server's `GatewayPorts` policy. A local TCP probe cannot prove remote listener reachability, so remote forwards report process health rather than pretending to have an end-to-end local probe.
+- Remote Agent account state and permission behavior belong to each provider. RemoteDeck never captures tokens and does not add auto-approval or sandbox-bypass flags.
+- There is no automatic updater in 2.0.0. Download and verify each GitHub Release manually.
+- Full quit has bounded local cleanup waits. OpenSSH children are killed/reaped on a best-effort owned-process basis, but an unreachable remote operation cannot be made synchronous forever; release acceptance records any residual cleanup limitation rather than claiming an unbounded guarantee.

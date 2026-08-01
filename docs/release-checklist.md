@@ -1,34 +1,43 @@
-# RemoteDeck v1.0.1 release checklist
+# RemoteDeck 2.0.0 release checklist
 
-## Automated candidate gates
+Release preparation updated: 2026-08-02. Only boxes backed by the exact final commit and installer may be checked. All boxes remain evidence items; this file does not announce completion.
 
-- [x] Clean frozen dependency installation succeeds.
-- [x] `pnpm verify` is green on the final v1.0.1 tree: 53 unit and 4 integration tests.
-- [x] `pnpm test:e2e` is green on the final production renderer build: 2/2.
-- [x] `pnpm audit --audit-level high` reports no known vulnerabilities.
-- [x] `pnpm dist:win` produces the unsigned x64 NSIS and portable artifacts.
-- [x] The portable artifact creates a RemoteDeck window with isolated userData.
-- [x] NSIS silently installs to a clean temporary path, launches, uninstalls, and removes owned state.
-- [x] Packaged fuse readback matches `security-audit.md`.
-- [x] Artifact sizes and SHA-256 are captured in `release-manifest.md`.
-- [x] Source audit has no unexplained TODO/FIXME/mock data/disabled shell or production legacy port/path default.
+## Source and automated gates
 
-## Docker/real SSH acceptance
+- [ ] Versions match in root package, desktop package, Cargo, Tauri config, tag, and manifest.
+- [ ] Frozen `pnpm install` and `pnpm audit --audit-level high` pass.
+- [ ] `pnpm verify` passes lint, TypeScript, frontend unit/integration tests, command-boundary verification, and production build.
+- [ ] `cargo fmt --check`, all-feature Rust tests, and strict all-target/all-feature Clippy pass.
+- [ ] Independent terminal transport, SSH/SFTP, tunnel, Agent/migration, ProxyJump, telemetry/btop, host lifecycle, persistence, and frontend contract reviews have no open release blocker.
+- [ ] Source audit has no production TODO/FIXME, mock data, inert control, broad Tauri plugin, Electron runtime dependency, or unexplained warning suppression.
 
-- [x] CI Docker OpenSSH job green: direct + ProxyJump, host key, password/key, `authorized_keys`, PTY, SFTP, tunnels, telemetry, btop/process and Codex external-boundary fixture.
-- [x] User-authorized real-host procedure is complete in `tests/manual/m9-real-host-acceptance.md`; credentials were not available to this build and are an explicit external boundary.
-- [x] Network/tunnel/tray/full-quit procedure and automated fake/Docker boundaries are complete; real external traffic remains part of the user-authorized checklist.
-- [x] Codex install/login/start/resume/update procedure and mock external account boundary are complete; account approval remains user-controlled.
+## Exact package acceptance
 
-Real secrets, private-key passphrases, and Codex account approval are intentionally never scripted. The checked-in Docker fixture and mock account boundary cover all other paths.
+- [ ] `pnpm dist:win` produces only the Windows x64 NSIS target.
+- [ ] Installer is below 40 MiB and Authenticode status is recorded.
+- [ ] The unpackaged release binary launches and exposes a non-zero main-window handle without early exit.
+- [ ] The exact installer silently installs into a clean per-user directory.
+- [ ] The installed executable launches and exposes a non-zero main-window handle.
+- [ ] The installed uninstaller succeeds and removes the temporary installation.
+- [ ] A visual smoke pass covers onboarding, all seven workspaces, host editor, native pickers, Agent plan confirmation, and no clipped/garbled text.
+- [ ] `SHA256SUMS.txt` and `release-manifest.json` match the exact uploaded installer bytes.
+
+## External SSH acceptance
+
+- [ ] Direct and saved-profile ProxyJump connections refuse unknown/changed keys and succeed after independently verified acceptance.
+- [ ] Interactive password/key-passphrase prompts remain inside the terminal and are absent from persisted state and diagnostics.
+- [ ] Terminal passwords/passphrases remain inside ConPTY; loopback input rejects wrong host/path/origin, expired/replayed tickets, stale generations, oversized frames, and excess buffering.
+- [ ] Unicode SFTP upload/download, transactional overwrite/rollback, conflict choices, cancellation/current-profile retry, host-retirement barriers, and recursive symlink-safe behavior pass on a trusted Linux host.
+- [ ] Local and remote tunnels pass direction-correct health, current-profile reconnect, revision ordering, bounded-log, active-route edit, delete-during-start, and full-quit cleanup checks.
+- [ ] Telemetry passes healthy, malformed, oversized, revised-event ordering, current-profile reconnect, no-Python/no-GPU/no-btop degradation, start-tick-bound TERM/KILL with native confirmation, stable-owner watchdog adoption/bootstrap lease, and bounded cleanup checks.
+- [ ] Host deletion rejects referenced ProxyJump hosts, retires new SFTP/terminal/command work, waits for active operations, cleans tunnel/telemetry/btop state, and persists removal only after cleanup succeeds.
+- [ ] Codex, Claude, Gemini, and OpenCode plans/probes are provider-specific; account login remains a user-controlled external step.
 
 ## Publication
 
-- [x] Explicit user authorization received on 2026-07-25 to publish an unsigned v1.0.1 directly to public `main`.
-- [x] Final v1.0.1 commit is pushed to `main` after all candidate checks pass.
-- [x] All required GitHub Actions jobs are green on the exact release commit: run [`30159429692`](https://github.com/shilittle/RemoteDeck/actions/runs/30159429692).
-- [x] The `v1.0.1` tag and bilingual Release point to the exact tested `main` commit `8ab1e27589fc2d19f8909ebe4f1304c355d9e11b`.
-- [x] NSIS, portable, and blockmap assets are uploaded with exact SHA-256 values.
-- [x] GitHub's post-upload size and SHA-256 digest match all three local assets; authenticated Asset API streaming independently revalidated the complete blockmap.
+- [ ] Final commit is pushed to the public repository and CI is green for that exact SHA.
+- [ ] The release branch is merged to `main`; signed or annotated `v2.0.0` tag points to the tested merge commit.
+- [ ] GitHub Release is non-draft, contains bilingual notes, installer, checksums, and JSON manifest.
+- [ ] GitHub-reported asset bytes/digest and an independent post-upload download match local evidence.
 
-The v1.0.0 baseline evidence remains in Draft PR [#1](https://github.com/shilittle/RemoteDeck/pull/1). This checklist records the independently rerun v1.0.1 patch validation and the explicit decision to distribute unsigned Windows assets with published SHA-256 values.
+Real passwords, private-key passphrases, host fingerprint approval, remote package-manager trust, and Agent account approval are intentionally never scripted.

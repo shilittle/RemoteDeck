@@ -1,6 +1,6 @@
 {
   "name": "remotedeck",
-  "version": "2.0.0-alpha.1",
+  "version": "2.0.0",
   "private": true,
   "description": "A lightweight Tauri 2 SSH workspace for Linux remote-development workflows",
   "license": "MIT",

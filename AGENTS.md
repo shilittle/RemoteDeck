@@ -1,6 +1,6 @@
 # RemoteDeck repository instructions
 
-RemoteDeck 2 is a Windows 10/11 x64 desktop application built with Tauri 2, Rust, React and xterm.js. The previous Electron implementation remains temporarily in the repository as migration reference but is not part of the Tauri build or release artifact.
+RemoteDeck 2 is a Windows 10/11 x64 desktop application built with Tauri 2, Rust, React and xterm.js. Historical user-data fixtures remain for migration tests, but the previous Electron implementation has been removed from the production source tree.
 
 ## Architecture boundaries
 
@@ -36,11 +36,11 @@ Rust gates:
 ```text
 cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all -- --check
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-features
-cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings -A linker-messages
 ```
 
 ## Completion discipline
 
 - A control performs a real operation or is absent. No fake telemetry, fake connection state, inert buttons or placeholder production data.
 - Keep the NSIS installer below the 40 MiB CI ceiling.
-- Port features in security-first vertical slices. The first slice is host profiles, host-key verification, connection testing, terminal, one-shot commands, settings and local/remote forwarding. SFTP, telemetry, task center and Codex lifecycle remain excluded until native implementations and tests exist.
+- Preserve the complete native feature set: host profiles and trust, terminal, SFTP transfers, commands and task center, telemetry and btop, tunnels, key lifecycle, agent sessions, settings, diagnostics and legacy-data migration.

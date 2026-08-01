@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify frontend and command boundary
+        run: pnpm verify
+      - name: Install Rust and Tauri CLI
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+          cargo install tauri-cli --version 2.11.2 --locked
+          cargo install cargo-audit --version 0.22.2 --locked
+      - name: Verify Rust core
+        shell: pwsh
+        run: |
+          cargo audit --file apps/desktop/src-tauri/Cargo.lock
+          cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all -- --check
+          cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-features
+          # Rust 1.97 classifies localized MSVC import-library status stdout as
+          # linker_messages. Errors still fail; this is the only lint allow.
+          cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings -A linker-messages
+      - name: Build NSIS package
+        run: pnpm dist:win
+      - name: Clean-install and launch smoke test
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -LiteralPath apps/desktop/src-tauri/target/release/bundle/nsis -Filter '*.exe' | Select-Object -First 1
+          if ($null -eq $installer) { throw 'NSIS installer not found.' }
+          if ($installer.Length -ge 40MB) { throw "Installer exceeds 40 MiB: $($installer.Length) bytes." }
+          $installDir = Join-Path $env:RUNNER_TEMP 'RemoteDeck-clean-install'
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -PassThru -Wait
+          if ($install.ExitCode -ne 0) { throw "Silent install failed with $($install.ExitCode)." }
+          $binary = Join-Path $installDir 'RemoteDeck.exe'
+          if (-not (Test-Path -LiteralPath $binary)) { throw 'Installed RemoteDeck.exe not found.' }
+          $process = Start-Process -FilePath $binary -PassThru
+          try {
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 40; $attempt++) {
+              Start-Sleep -Milliseconds 500
+              $process.Refresh()
+              if ($process.HasExited) { throw "Installed app exited with $($process.ExitCode)." }
+              if ($process.MainWindowHandle -ne 0) { $ready = $true; break }
+            }
+            if (-not $ready) { throw 'Installed app did not create a main window.' }
+          } finally {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }
+          $uninstaller = Join-Path $installDir 'uninstall.exe'
+          if (Test-Path -LiteralPath $uninstaller) {
+            $uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait
+            if ($uninstall.ExitCode -ne 0) { throw "Silent uninstall failed with $($uninstall.ExitCode)." }
+          }
+      - name: Prepare release assets
+        id: assets
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          if (-not $version) { $version = (Get-Content package.json | ConvertFrom-Json).version }
+          $source = Get-ChildItem -LiteralPath apps/desktop/src-tauri/target/release/bundle/nsis -Filter '*.exe' | Select-Object -First 1
+          $assetDir = New-Item -ItemType Directory -Force -Path release-assets
+          $asset = Join-Path $assetDir.FullName "RemoteDeck-$version-win-x64-setup.exe"
+          Copy-Item -LiteralPath $source.FullName -Destination $asset
+          $hash = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $([IO.Path]::GetFileName($asset))" | Set-Content -LiteralPath (Join-Path $assetDir.FullName 'SHA256SUMS.txt') -Encoding utf8NoBOM
+          $manifest = [ordered]@{ version = $version; platform = 'windows-x64'; installer = [IO.Path]::GetFileName($asset); sha256 = $hash; bytes = (Get-Item -LiteralPath $asset).Length; unsigned = $true }
+          $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $assetDir.FullName 'release-manifest.json') -Encoding utf8NoBOM
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - uses: actions/upload-artifact@v7
+        with:
+          name: RemoteDeck-${{ steps.assets.outputs.version }}-windows-x64
+          path: release-assets/*
+          if-no-files-found: error
+      - name: Publish GitHub Release assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view '${{ github.ref_name }}' *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create '${{ github.ref_name }}' --verify-tag --generate-notes --title "RemoteDeck ${{ github.ref_name }}"
+          }
+          gh release upload '${{ github.ref_name }}' release-assets/* --clobber

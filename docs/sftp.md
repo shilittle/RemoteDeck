@@ -1,38 +1,11 @@
-# SFTP files and transfers
+# SFTP and transfers
 
-RemoteDeck uses the SFTP channel of the selected verified SSH connection. Directory browsing, mutations, and transfer streams run in the Electron main process; the renderer receives only validated entries, job snapshots, and fixed file-picker results.
+Rust drives system `sftp.exe` in batch mode over the same strict app-owned host trust as every other connection. Batch commands use bounded quoting and reject controls/newlines. Listings preserve spaces and Unicode while limiting entry/output sizes.
 
-## Browser and mutations
+The UI supports browsing, parent navigation, create, rename, recursive delete, native local file/folder selection, native Tauri drag-drop paths, recursive upload/download, and open-in-folder for completed local results. Background operations require key/agent authentication.
 
-The file view resolves the selected workspace through SFTP and provides a lazy directory tree, clickable breadcrumbs, refresh, and a show/hide-dotfiles toggle. Entries include type, byte size, modification time, Unix mode, uid, and gid. Empty, loading, offline, permission, and operation-failure states are explicit.
+Transfers have bounded concurrency and explicit queued/running/cancelling/completed/failed/cancelled states. Conflict behavior is ask, overwrite, skip, or deterministic rename. Uploads and downloads first write an app-owned temporary path. An overwrite moves the existing destination to an app-owned backup, promotes the complete temporary result, then removes the backup; failed promotion attempts rollback, and a failed rollback preserves and reports the backup path instead of silently losing the original. Cancellation can clean only temporary paths bearing the current job's valid UUID ownership suffix. Destructive remote roots, traversal, relative ambiguity, basename escape, oversized trees, and symlink-recursion hazards are rejected.
 
-New folders and empty files use non-overwriting creation. Rename refuses to replace an existing path. Delete is recursive but refuses remote `/`; symbolic links are unlinked as links and never traversed, preventing cycles. All names are treated as individual path segments, and paths containing spaces, quotes, or CJK text remain data rather than shell commands.
+Retry is not bound to the stale profile captured by the failed attempt. It requires the selected host to own the job, resolves the current saved host profile, revalidates the operation and limits, replaces the captured route, and only then queues a new attempt.
 
-## Transfer engine
-
-Uploads and downloads support files and directory trees. Up to three jobs run concurrently; every job reports bytes, total size, speed, state, source, destination, and actionable failure text. Jobs can be cancelled or retried. A conflict policy applies to the full request:
-
-- `skip` leaves an existing destination untouched;
-- `overwrite` removes the conflicting destination before transfer;
-- `rename` selects `name (N).ext` without overwriting.
-
-An upload writes a uniquely owned hidden `.upload` file in the destination directory, applies mode bits, and renames it only after the stream completes. A download writes an owned `.part` sibling and renames it after completion. Cancellation aborts the stream and reports `cancelled` only after its owned temporary file is removed. Cleanup never uses broad globs or deletes another instance's files.
-
-Local files and folders can be selected with native dialogs. Drag-in upload uses Electron's user-gesture-scoped path lookup for the dropped `File` objects; it does not expose arbitrary filesystem reads to the renderer. Download uses an explicit “下载到…” directory picker and a completed-job “打开位置” action. Remote drag-out is not used in v1 because Electron/Windows cannot make recursive remote items reliably available synchronously; the explicit download workflow is the documented fallback required by the specification.
-
-## Verification
-
-The in-memory SFTP boundary test runs the production CRUD and transfer services against Unicode/space-containing trees, empty files, recursive upload/download, rename conflicts, cancellation, and owned-temp cleanup.
-
-The Docker OpenSSH acceptance suite additionally verifies real SFTP permissions and protocol behavior with:
-
-- empty and renamed files;
-- nested Chinese filenames and content;
-- a 100 MiB upload and download;
-- recursive directories;
-- conflict rename;
-- immediate cancellation and temporary-file cleanup;
-- a self-referential symbolic link that is never followed;
-- recursive deletion of the owned test tree.
-
-Run it with the container commands in `docs/ssh.md`.
+Every top-level SFTP CRUD operation and every multi-step transfer transaction holds a per-host operation barrier. Deleting a host first retires new SFTP work, cancels transfers, waits for both job controls and direct SFTP operations to become idle, and purges retained jobs so they cannot be retried after deletion. Connection-critical edits to either the target profile or its direct ProxyJump route are rejected while queued, running, or cancelling transfers still use that route; harmless presentation-only edits remain possible.

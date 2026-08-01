@@ -1,22 +1,35 @@
-# Architecture
+# RemoteDeck 2 architecture
 
-RemoteDeck uses one packaged Electron application with four explicit layers.
+RemoteDeck 2's production architecture targets one Tauri 2 application for Windows x64. The configured bundle consists of a Rust executable and static React assets rendered by the system WebView2. Electron, Chromium, production Node.js, `ssh2`, generic shell/filesystem/HTTP plugins, and a self-extracting portable runtime are outside the production architecture.
 
-1. `src/main` owns windows, lifecycle, trusted operating-system access, IPC registration, persistence wiring, and later SSH/background resources.
-2. `src/preload` runs in Electron's isolated sandbox. It exposes one frozen `window.remoteDeck` object containing named methods only. Each request and response is parsed with the same versioned Zod contract.
-3. `src/renderer` is a React application with a Zustand view store. It has no Node integration and cannot import filesystem, process, Electron, ssh2, or arbitrary IPC APIs.
-4. `src/core` and `src/protocol` contain Electron-independent business utilities, state/domain models, and runtime contracts. Core code does not import React.
+## Layers
 
-The renderer invokes a fixed `v1:*` channel. The preload validates the outgoing value, Electron main verifies the exact sender frame, main validates again, a service performs the action, and the return value is validated before crossing both boundaries. High-frequency terminal and telemetry traffic uses named, disposable event subscriptions rather than broad channel access.
+1. `apps/desktop/tauri-ui` contains the React workbench, xterm.js terminals, typed API client, and view state. It performs no SSH or local filesystem operations itself.
+2. `apps/desktop/src-tauri/src/lib.rs` is the narrow Tauri command boundary. `scripts/verify-tauri-boundary.mjs` requires every frontend invoke to match one registered command and every registered command to have a typed frontend method.
+3. Rust services own persistence, host trust, OpenSSH process creation, ConPTY sessions, SFTP transfers, tunnel supervision, telemetry, commands, Agent plans, migration, diagnostics, and desktop lifecycle.
+4. Windows OpenSSH supplies `ssh.exe`, `sftp.exe`, `ssh-keyscan.exe`, and `ssh-keygen.exe`. Remote operations target Linux and never use an embedded SSH implementation.
 
-Configuration is a versioned JSON document under Electron `userData`. Writes are serialized, schema-checked, written to an owned temporary file, flushed, backed up, and atomically renamed. Invalid persisted data is never silently trusted.
+## Data and trust
 
-The main process is the sole producer of connection, tunnel, telemetry, and background-tool state. Each SSH or supervisor generation owns its resources and rejects callbacks from stale generations. Terminal, SFTP, tunnel, telemetry, command, and Codex services are separate consumers of a connection manager, with tunnels using dedicated SSH clients.
+Tauri's application-data directory contains `state-v2.json`, `state-v2.json.bak`, an app-owned `known_hosts`, and the no-clobber `btop-owner-v2` installation nonce. State changes are validated against a cloned model, written to an owned temporary file, flushed, atomically replaced, and only then swapped into memory. Startup recovers from the validated backup when the primary file is damaged. The btop nonce is created once without overwriting a concurrently created value and binds remote watchdog ownership across application restarts.
 
-The Python collector is a packaged resource outside the Electron bundle. Main streams it through an already authenticated SSH channel to `python3 -u -`; it is not installed remotely. Strict v1 JSONL is parsed in main, retained in a bounded in-memory history, then emitted over one named telemetry event. btop uses an independent PTY channel and is never treated as a structured data source. See `docs/monitoring.md`.
+Every SSH family command uses `-F none`, the app-owned trust file, `StrictHostKeyChecking=yes`, disabled global known-hosts and key updates, fixed argument vectors, bounded output, and timeouts. First-use acceptance rescans the key before persistence. A changed key cannot be overwritten implicitly.
 
-The command service owns preset CRUD, main-side risk enforcement, bounded exec jobs, and per-channel cancellation. PTY-required commands are handed to the terminal service instead of emulating a terminal over exec. The separate Codex service performs only fixed capability probes and opens official CLI commands in those PTYs; tmux session association is derived from host and workspace identity. See `docs/commands-codex.md`.
+Interactive authentication stays in a real SSH PTY backed by ConPTY. Rust sends terminal output as bounded, ordered events. Input does not use an invoke payload: a narrow command issues a short-lived, single-use ticket for an IPv4-loopback WebSocket bound to the current session generation. The handshake checks the exact host, path, allowed Tauri/development origin, ticket, and live generation; frames are bounded and the connection is invalidated on reconnect, close, host retirement, or shutdown. Passwords, keyboard-interactive answers, private-key passphrases, terminal input, and terminal output are not persisted or placed in diagnostics.
 
-First-run onboarding is a renderer workflow over the same host/Codex services used after setup. Legacy migration is a main/core service with a preview/apply contract and content-hash idempotency. The bottom task center is a projection of existing transfer, command, tunnel, and connection state rather than a second task engine. Tray close hides only the BrowserWindow; main owns the still-live background resources until Electron's explicit quit lifecycle runs. See `docs/experience-and-migration.md`.
+## Runtime ownership
 
-Diagnostics is another main-owned service. The renderer can only request a native save flow; main constructs a stored ZIP from anonymous profile counts, redacted settings, runtime capability snapshots, and bounded recent category logs. It never reads terminal buffers or remote file content and refuses to write if a final secret scan would change an entry.
+- `TerminalRegistry` owns multi-tab PTY children, authenticated loopback input tickets/connections, ordered terminal events, and a host-retirement barrier.
+- `TransferRegistry` owns bounded-concurrency SFTP jobs and cancellation tokens. SFTP CRUD and complete transfer transactions hold a per-host operation barrier; overwrite publication uses app-owned temporary/backup names and rollback rather than deleting the destination first.
+- `TunnelRegistry` serializes start/stop/remove transitions, owns each forwarding child, refreshes the saved host profile before every connection attempt, emits monotonically revised state, drains bounded logs, checks health, and applies capped backoff.
+- `TelemetryRegistry` streams the embedded collector to `python3 -u -` over verified SSH; the script is not installed remotely. History is bounded in memory, reconnects refresh the saved profile, and status events carry monotonic revisions.
+- `CommandJobRegistry` reclassifies final commands in Rust, enforces confirmation, bounds concurrency/output, and owns cancellation.
+- Agent actions produce validated provider-specific plans and always execute in ordinary SSH PTY/tmux sessions with provider permission systems intact.
+
+Connection-critical edits to a direct host or a referenced ProxyJump are rejected while an active transfer, tunnel, telemetry collector, or tracked btop watchdog still depends on that route. Host deletion first rejects referenced jump hosts, retires new SFTP/terminal/command admission, cancels and waits for their owned work, then marks the repository host as deleting while tunnel, telemetry, and tracked watchdog cleanup runs. The host plus its attached tunnel/preset records is persisted as deleted only after coordinated cleanup succeeds; an aborted deletion reopens runtime admission.
+
+Closing the main window may hide it to the tray. Tray Quit is the full-exit boundary: locally owned terminals, tunnel children, telemetry collectors, commands, transfers, and tracked btop watchdogs receive concurrent cleanup. Individual cleanup waits and the overall application wait are bounded, so an unreachable remote watchdog can outlive the local process and is reported as residual risk rather than making exit unbounded. A second application launch activates the existing window rather than starting another runtime.
+
+## Packaging
+
+Only the current-user NSIS target is enabled. WebView2 uses `downloadBootstrapper`; the exact installer must pass the 40 MiB release ceiling. The release workflow is configured to build on Windows and prepare checksums and a machine-readable manifest, but publication is permitted only after the exact candidate also passes unpackaged launch, clean silent install/launch/uninstall, Authenticode-status recording, and independent post-upload digest verification. See the unchecked [release checklist](release-checklist.md) for current evidence rather than inferring success from this architecture description.

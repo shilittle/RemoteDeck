@@ -1,46 +1,15 @@
-# SSH hosts, trust, and keys
+# SSH and host trust
 
-RemoteDeck owns its versioned host database and interoperates with OpenSSH config without making the local `ssh.exe` a runtime dependency. The Electron main process owns every socket, private-key read, config write, and SFTP operation; the sandboxed renderer can call only fixed, schema-validated operations.
+RemoteDeck 2 uses Windows OpenSSH from `%SystemRoot%\System32\OpenSSH` before PATH. Every SSH and SFTP invocation supplies `-F none`, strict checking, the app-owned `known_hosts`, a null global hosts file, disabled DNS/key updates, validated connection values, bounded output, and a timeout.
 
-## Host profiles and connections
+`ssh-keyscan` only discovers candidates. The UI displays SHA-256 fingerprints, and acceptance verifies the candidate fields, checks existing trust, performs a second network scan, then atomically persists only an exact match. A changed key hard-fails until the prior exact trust is explicitly removed and the replacement is independently verified.
 
-The host editor supports direct connections and one ProxyJump level. Target and jump-host secrets are separate inputs and remain in the current IPC/connection call only. Supported authentication methods are password, keyboard-interactive, an existing private key with optional passphrase, Windows OpenSSH agent, and Pageant. Passwords, answers, passphrases, and in-memory private-key buffers are cleared after each attempt and are never persisted or logged.
+ProxyJump never accepts a free-form command. The selected jump must resolve to a saved, direct-connect host profile (saved ID, alias, or an exact `user@host[:port]` match is normalized to the saved ID). Nested chains and deleting a referenced jump are rejected. RemoteDeck generates the inner OpenSSH `ProxyCommand` itself with a second `-F none`, the same dedicated trust file, the jump profile's own port and identity, and `BatchMode=yes`; all shell-visible endpoint fields use a strict allow-list and all arguments receive platform-safe quoting. The jump fingerprint must be accepted before it can be used. Target discovery runs `ssh-keyscan` on that already-trusted jump, rewrites the result to the target's known-host token, and still requires the normal explicit fingerprint confirmation and acceptance rescan.
 
-Connection diagnostics normalize DNS failure, TCP refusal/timeout, host-key failure, and authentication failure. A successful capability test opens a PTY, probes SFTP, checks `python3`, and verifies write access to the selected workspace.
+Because the proxy stream cannot carry an authentication prompt, a jump profile must authenticate non-interactively through Windows OpenSSH agent or an already-unlocked/unencrypted key. Target authentication may still be interactive in a terminal. A remote `ssh-keyscan` executable is required on the jump only while discovering a previously untrusted target key.
 
-## Host-key trust
+Remote services resolve a current saved profile before starting new work or a reconnect attempt. Connection-critical edits (endpoint, user, authentication/identity, ProxyJump, and advanced SSH options) to a target or its direct jump are refused while affected transfers, tunnels, telemetry collectors, or tracked btop watchdogs are active. A jump host cannot be deleted while any saved target references it. Coordinated deletion separately retires new runtime admission and allows only already captured routes needed to finish app-owned cleanup.
 
-The first handshake is intentionally stopped before authentication. RemoteDeck shows the exact SHA-256 fingerprint and algorithm and stores it only after explicit acceptance. A later mismatch is a hard failure showing both old and new fingerprints. It cannot be accepted in the mismatch dialog: the user must verify the server out of band and explicitly remove the old trust record first.
+OpenSSH config import is read-only, bounded, and persisted atomically. It accepts concrete hosts and selected directives (`HostName`, `User`, `Port`, `IdentityFile`, `ProxyJump`, timeout/keepalive/compression options). A ProxyJump must map to another concrete host in the same import or an already-saved profile. It does not follow `Include`, expand arbitrary shell values, import wildcard/`Match` behavior, or accept multi-hop chains.
 
-Trust records bind hostname and port to the exact public-key blob. OpenSSH config imports do not import trust implicitly.
-
-## OpenSSH config interoperability
-
-RemoteDeck parses `Host`, `HostName`, `User`, `Port`, `IdentityFile`, `IdentitiesOnly`, `ProxyJump`, `ServerAliveInterval`, `ServerAliveCountMax`, `TCPKeepAlive`, `ConnectTimeout`, `Compression`, `LocalForward`, and `RemoteForward`. Unsupported directives are retained with the import record and displayed as read-only raw lines.
-
-The app writes only `~/.ssh/remotedeck.conf` (or the sibling of a custom config path) and adds one normalized `Include` line to the user's config. Existing comments and complex blocks are not rewritten. Writes use an exclusive temporary file plus rename; an existing user config receives a timestamped backup and is restored if validation fails. Repeating the same import or managed write is idempotent.
-
-Imported `LocalForward` and `RemoteForward` entries become tunnel profiles for M5. Imported ProxyJump aliases are resolved only to a valid direct host; nested jumps are rejected.
-
-## Private-key lifecycle
-
-The native file picker scans only files selected by the user. RemoteDeck persists the path, public metadata, size, modification time, format, encryption flag, and fingerprint where available—never private-key bytes. New keys are Ed25519 in OpenSSH format, may be passphrase protected, use exclusive creation so an existing file cannot be overwritten, and receive a best-effort current-user-only Windows ACL.
-
-Deployment uses the already authenticated SFTP channel. It creates `~/.ssh` with mode `0700`, normalizes and deduplicates `authorized_keys` by algorithm and key material, writes a temporary file, renames it atomically, and sets mode `0600`. No shell-quoted `echo` is used. RemoteDeck then opens a fresh private-key connection; only a successful verification can change the host's default authentication profile and managed OpenSSH config.
-
-## Integration verification
-
-`pnpm test:integration` runs real in-process SSH servers for password, keyboard-interactive, and two-hop ProxyJump flows with independent credentials and host keys.
-
-The CI OpenSSH acceptance test uses the fixture in `tests/fixtures/openssh`:
-
-```powershell
-docker build -t remotedeck-openssh tests/fixtures/openssh
-docker run --rm -d --name remotedeck-openssh -p 127.0.0.1:22222:22 remotedeck-openssh
-$env:REMOTEDECK_OPENSSH_HOST = '127.0.0.1'
-$env:REMOTEDECK_OPENSSH_PORT = '22222'
-pnpm --filter @remotedeck/desktop test:integration:openssh
-docker stop remotedeck-openssh
-```
-
-It verifies password first login, explicit fingerprint acceptance, encrypted Ed25519 generation, SFTP deployment, deduplication, a fresh key-authenticated connection, and switching the default authentication method. The fixture credentials are test-only and must never be reused outside the isolated container.
+Interactive authentication occurs only in PTYs. Non-interactive tests, SFTP, tunnels, telemetry, commands, probes, and key deployment run in batch mode and therefore use a private key or ssh-agent without passing a password through the renderer.

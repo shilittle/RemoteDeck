@@ -17,10 +17,16 @@ pub enum AppError {
     MissingExecutable(String),
     #[error("process failed: {0}")]
     Process(String),
+    #[error("process cleanup failed: {0}")]
+    ProcessCleanup(String),
+    #[error("operation cancelled")]
+    Cancelled,
     #[error("operation timed out: {0}")]
     Timeout(String),
     #[error("serialization error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("archive error: {0}")]
+    Archive(#[from] zip::result::ZipError),
 }
 
 impl Serialize for AppError {

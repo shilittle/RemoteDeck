@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.0.0 — 2026-08-01
+
+### Changed
+
+- Replaced the Electron/Node/`ssh2` desktop runtime with a new Tauri 2, Rust, React, xterm.js, Windows OpenSSH, and ConPTY architecture.
+- Reduced distribution to one current-user NSIS installer using the WebView2 download bootstrapper, with a strict 40 MiB release gate and no portable target.
+- Rebuilt every application workspace—hosts and trust, terminals, SFTP and transfers, tunnels, monitoring, commands, AI agents, settings, migration, diagnostics, task center, tray, and login lifecycle—behind typed Tauri commands.
+- Added Codex, Claude Code, Gemini CLI, and OpenCode provider-neutral remote workflows.
+- Added transactional migration from both LabPulse SSH v0.1.0 and RemoteDeck v1 state.
+
+### Security
+
+- All connections use Windows OpenSSH with `-F none`, an app-owned `known_hosts`, strict host-key checking, explicit rescan-before-acceptance, and hard failure on changed keys.
+- Removed production Electron, Chromium, Node.js, `ssh2`, generic shell/filesystem/HTTP plugins, and portable packaging.
+- Added conservative L0/L1/L2 command analysis, bounded output and concurrency, process-identity checks, atomic persistence and migration, recursive redaction, and owned-process/temp-file cleanup.
+- Added command-surface parity checks, strict Rust Clippy, clean installer launch/uninstall tests, artifact size enforcement, SHA-256 manifests, and independent subsystem reviews.
+
 ## 1.0.1 — 2026-07-25
 
 ### Changed

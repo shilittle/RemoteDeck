@@ -1,6 +1,6 @@
 [package]
 name = "remotedeck"
-version = "2.0.0-alpha.1"
+version = "2.0.0"
 description = "A lightweight Tauri 2 SSH workspace"
 authors = ["RemoteDeck contributors"]
 license = "MIT"
@@ -20,13 +20,20 @@ base64 = "0.22"
 chrono = { version = "0.4", features = ["clock", "serde"] }
 parking_lot = "0.12"
 portable-pty = "0.9.0"
+rfd = { version = "=0.17.2", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
-tauri = { version = "=2.11.2", features = [] }
+tauri = { version = "=2.11.2", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
 thiserror = "2"
-tokio = { version = "1", features = ["macros", "process", "rt-multi-thread", "time"] }
+tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
+tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
 uuid = { version = "1", features = ["serde", "v4"] }
+zip = { version = "4.0", default-features = false, features = ["deflate"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_System_SystemInformation"] }
 
 [features]
 default = ["custom-protocol"]
