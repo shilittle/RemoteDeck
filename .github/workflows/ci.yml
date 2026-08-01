@@ -17,15 +17,18 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           version: 11.9.0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Audit frontend dependencies
+        if: runner.os == 'Linux'
+        run: pnpm audit --audit-level high
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
@@ -36,11 +39,11 @@ jobs:
     name: Rust core (Windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           version: 11.9.0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: pnpm
@@ -64,7 +67,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Rust and Tauri Linux prerequisites
         shell: bash
         run: |
@@ -89,11 +92,11 @@ jobs:
     runs-on: windows-latest
     needs: [frontend-quality, rust-quality, openssh-integration]
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           version: 11.9.0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: pnpm
@@ -103,7 +106,7 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
-          cargo install tauri-cli --version 2.11.2 --locked
+          cargo install tauri-cli --version 2.11.4 --locked
       - run: pnpm dist:win
       - name: Smoke-launch packaged Tauri binary
         shell: pwsh
@@ -139,7 +142,7 @@ jobs:
           $limit = 40MB
           if ($installer.Length -ge $limit) { throw "Installer is $($installer.Length) bytes; limit is $limit bytes." }
           Write-Host "RemoteDeck installer: $([math]::Round($installer.Length / 1MB, 2)) MiB"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: RemoteDeck-2.0.0-windows-x64
           path: apps/desktop/src-tauri/target/release/bundle/nsis/*.exe

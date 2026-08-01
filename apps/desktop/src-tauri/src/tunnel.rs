@@ -900,14 +900,14 @@ fn terminate_generation_child(entry: &TunnelEntry, generation: u64) -> io::Resul
         }
         inner.child.take()
     };
-    if let Some(mut child) = child {
-        if let Err(error) = child.terminate() {
-            let mut inner = entry.inner.lock();
-            if inner.generation == generation && inner.child.is_none() {
-                inner.child = Some(child);
-            }
-            return Err(error);
+    if let Some(mut child) = child
+        && let Err(error) = child.terminate()
+    {
+        let mut inner = entry.inner.lock();
+        if inner.generation == generation && inner.child.is_none() {
+            inner.child = Some(child);
         }
+        return Err(error);
     }
     Ok(())
 }

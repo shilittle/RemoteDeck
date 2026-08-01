@@ -30,7 +30,7 @@ Windows 10/11 x64 需要 Node.js 24、pnpm 11、stable Rust、Microsoft C++ Buil
 
 ```powershell
 pnpm install --frozen-lockfile
-cargo install tauri-cli --version 2.11.2 --locked
+cargo install tauri-cli --version 2.11.4 --locked
 pnpm verify
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-features
 cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings -A linker-messages
