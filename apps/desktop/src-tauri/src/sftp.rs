@@ -416,7 +416,11 @@ impl SftpService {
         cancellation: Option<&ChildCancellation>,
     ) -> AppResult<Option<SftpEntry>> {
         validate_remote_path(path)?;
-        let script = batch_command("ls -ldn", [path])?;
+        let (query_path, target_name) = metadata_listing_target(path);
+        // OpenSSH's sftp `ls` does not implement the shell `-d` flag. Querying
+        // the parent and selecting the exact entry preserves symlink metadata
+        // without interpreting the target name as a glob.
+        let script = batch_command("ls -lan", [&query_path])?;
         let output = self
             .run_raw_batch_inner(host, script, duration, cancellation)
             .await?;
@@ -427,18 +431,19 @@ impl SftpService {
             }
             return Err(AppError::Process(message));
         }
-        let parent = remote_parent(path).unwrap_or_else(|| "/".to_owned());
-        let mut entries = parse_long_listing(&captured_text(&output.stdout), &parent)?;
-        if entries.len() > 1 {
-            return Err(AppError::Process(
-                "SFTP metadata returned more than one record".to_owned(),
-            ));
-        }
-        Ok(entries.pop().map(|mut entry| {
-            entry.name = remote_file_name(path).unwrap_or_else(|| entry.name.clone());
-            entry.path = path.to_owned();
-            entry
-        }))
+
+        let Some(target_name) = target_name else {
+            return Ok(Some(SftpEntry {
+                name: remote_file_name(path).unwrap_or_else(|| path.to_owned()),
+                path: path.to_owned(),
+                kind: SftpEntryKind::Directory,
+                size: 0,
+                modified_at: None,
+                permissions: None,
+            }));
+        };
+        let entries = parse_long_listing(&captured_text(&output.stdout), &query_path)?;
+        select_metadata_entry(entries, &target_name, path)
     }
 
     async fn delete_tree(&self, host: &HostProfile, root: &str) -> AppResult<Vec<String>> {
@@ -1786,6 +1791,42 @@ fn remote_file_name(path: &str) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+fn metadata_listing_target(path: &str) -> (String, Option<String>) {
+    let target_name =
+        remote_file_name(path).filter(|name| !matches!(name.as_str(), "." | ".." | "~"));
+    let query_path = target_name
+        .as_ref()
+        .and_then(|_| remote_parent(path))
+        .unwrap_or_else(|| {
+            if target_name.is_some() {
+                ".".to_owned()
+            } else {
+                path.to_owned()
+            }
+        });
+    (query_path, target_name)
+}
+
+fn select_metadata_entry(
+    entries: Vec<SftpEntry>,
+    target_name: &str,
+    path: &str,
+) -> AppResult<Option<SftpEntry>> {
+    let mut matching = entries
+        .into_iter()
+        .filter(|entry| entry.name == target_name);
+    let entry = matching.next();
+    if matching.next().is_some() {
+        return Err(AppError::Process(
+            "SFTP metadata returned duplicate records".to_owned(),
+        ));
+    }
+    Ok(entry.map(|mut entry| {
+        entry.path = path.to_owned();
+        entry
+    }))
+}
+
 fn remote_join(parent: &str, name: &str) -> String {
     if parent == "/" {
         format!("/{name}")
@@ -2274,6 +2315,36 @@ mod tests {
         assert_eq!(entries[1].permissions.as_deref(), Some("-rw-r--r--"));
         assert_eq!(entries[2].name, "current");
         assert_eq!(entries[2].kind, SftpEntryKind::Symlink);
+    }
+
+    #[test]
+    fn metadata_uses_supported_parent_listing_and_selects_the_exact_entry() {
+        let (query_path, target_name) = metadata_listing_target("/tmp/project data/");
+        assert_eq!(query_path, "/tmp");
+        assert_eq!(target_name.as_deref(), Some("project data"));
+        let script = batch_command("ls -lan", [&query_path]).expect("metadata listing");
+        assert_eq!(script, "ls -lan \"/tmp\"\n");
+        assert!(!script.contains(" -d"));
+
+        let listing = concat!(
+            "-rw-r--r-- 1 1000 1000 2 Aug 1 12:34 project\n",
+            "drwxr-xr-x 2 1000 1000 0 Aug 1 12:34 project data\n"
+        );
+        let entries = parse_long_listing(listing, &query_path).expect("parse parent listing");
+        let entry = select_metadata_entry(
+            entries,
+            target_name.as_deref().expect("target name"),
+            "/tmp/project data/",
+        )
+        .expect("select metadata")
+        .expect("target exists");
+        assert_eq!(entry.name, "project data");
+        assert_eq!(entry.path, "/tmp/project data/");
+        assert_eq!(entry.kind, SftpEntryKind::Directory);
+
+        assert_eq!(metadata_listing_target("relative.txt").0, ".");
+        assert_eq!(metadata_listing_target("~/").1, None);
+        assert_eq!(metadata_listing_target("/").1, None);
     }
 
     #[test]
