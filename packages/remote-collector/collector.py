@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RemoteDeck v1 read-only Linux telemetry collector streamed over SSH stdin."""
+"""RemoteDeck 2 read-only Linux telemetry collector streamed over SSH stdin."""
 
 import argparse
 import csv
@@ -103,10 +103,20 @@ def disks():
             seen.add(device)
             total = info.f_blocks * info.f_frsize
             available = info.f_bavail * info.f_frsize
-            result.append({"mount": mount, "totalBytes": total, "usedBytes": max(0, total - info.f_bfree * info.f_frsize), "availableBytes": available})
+            result.append({"mount": mount[:1024], "totalBytes": total, "usedBytes": max(0, total - info.f_bfree * info.f_frsize), "availableBytes": available})
         except OSError:
             pass
-    return result
+    return result[:128]
+
+
+def process_start_ticks(pid):
+    try:
+        with open(f"/proc/{pid}/stat", "r", encoding="ascii") as handle:
+            stat = handle.read(8192)
+        fields_after_name = stat[stat.rfind(")") + 2 :].split()
+        return max(0, int(fields_after_name[19]))
+    except (OSError, ValueError, IndexError):
+        return 0
 
 
 def processes():
@@ -116,12 +126,13 @@ def processes():
     except (OSError, subprocess.SubprocessError):
         return []
     result = []
-    for line in output.splitlines()[:500]:
+    for line in output.splitlines()[:256]:
         fields = line.strip().split(None, 7)
         if len(fields) != 8:
             continue
         try:
-            result.append({"pid": int(fields[0]), "ppid": int(fields[1]), "user": fields[2][:256], "cpuPercent": max(0.0, float(fields[3])), "memoryPercent": max(0.0, float(fields[4])), "state": fields[5][:64], "elapsed": fields[6][:64], "command": fields[7][:32768]})
+            pid = int(fields[0])
+            result.append({"pid": pid, "startTicks": process_start_ticks(pid), "ppid": int(fields[1]), "user": fields[2][:256], "cpuPercent": max(0.0, float(fields[3])), "memoryPercent": max(0.0, float(fields[4])), "state": fields[5][:32], "elapsed": fields[6][:32], "command": fields[7][:512]})
         except ValueError:
             pass
     return result
@@ -153,7 +164,7 @@ def gpu_data():
         try:
             index = int(fields[0])
             uuid_to_index[fields[1]] = index
-            gpus.append({"index": index, "name": fields[2], "utilizationPercent": number(fields[3]) or 0, "memoryUsedMiB": number(fields[4]) or 0, "memoryTotalMiB": number(fields[5]) or 0, "temperatureC": number(fields[6]), "powerW": number(fields[7])})
+            gpus.append({"index": index, "name": fields[2][:256], "utilizationPercent": number(fields[3]) or 0, "memoryUsedMiB": number(fields[4]) or 0, "memoryTotalMiB": number(fields[5]) or 0, "temperatureC": number(fields[6]), "powerW": number(fields[7])})
         except ValueError:
             pass
     applications = ["nvidia-smi", "--query-compute-apps=gpu_uuid,pid,used_memory", "--format=csv,noheader,nounits"]
@@ -169,7 +180,7 @@ def gpu_data():
                 gpu_processes.append({"gpuIndex": uuid_to_index[fields[0]], "pid": int(fields[1]), "memoryUsedMiB": number(fields[2]) or 0})
         except ValueError:
             pass
-    return gpus, gpu_processes
+    return gpus[:32], gpu_processes[:256]
 
 
 def uptime():

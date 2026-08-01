@@ -3,11 +3,7 @@ packages:
   - packages/*
 
 allowBuilds:
-  cpu-features: true
-  electron: true
-  electron-winstaller: true
   esbuild: true
-  ssh2: true
 
 overrides:
   brace-expansion: file:packages/brace-expansion-compat

@@ -1,0 +1,367 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-release-source:
+    name: Validate release source and version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      source_commit: ${{ steps.release.outputs.source_commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate annotated tag, exact main commit and aligned package versions
+        id: release
+        shell: pwsh
+        env:
+          RELEASE_EVENT: ${{ github.event_name }}
+          RELEASE_REF_NAME: ${{ github.ref_name }}
+        run: |
+          $rootVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $desktopVersion = (Get-Content apps/desktop/package.json -Raw | ConvertFrom-Json).version
+          $tauriVersion = (Get-Content apps/desktop/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $metadata = cargo metadata --manifest-path apps/desktop/src-tauri/Cargo.toml --no-deps --format-version 1 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'cargo metadata failed.' }
+          $cargoVersion = ($metadata.packages | Where-Object name -eq 'remotedeck' | Select-Object -First 1).version
+          if (-not $cargoVersion) { throw 'RemoteDeck Cargo package version was not found.' }
+
+          $sourceCommit = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[0-9a-f]{40}$') { throw 'Checked-out source commit is invalid.' }
+
+          $versions = @($rootVersion, $desktopVersion, $tauriVersion, $cargoVersion) | Select-Object -Unique
+          if ($versions.Count -ne 1) {
+            throw "Version mismatch: root=$rootVersion desktop=$desktopVersion tauri=$tauriVersion cargo=$cargoVersion"
+          }
+
+          $version = $rootVersion
+          if ($env:RELEASE_EVENT -eq 'push') {
+            if ($env:RELEASE_REF_NAME -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$') {
+              throw "Release tag is not valid SemVer: $env:RELEASE_REF_NAME"
+            }
+            $tagVersion = $env:RELEASE_REF_NAME.Substring(1)
+            if ($tagVersion -ne $version) {
+              throw "Tag version $tagVersion does not match package version $version."
+            }
+            $tagRef = "refs/tags/$env:RELEASE_REF_NAME"
+            $tagType = (git cat-file -t $tagRef).Trim()
+            if ($LASTEXITCODE -ne 0 -or $tagType -ne 'tag') { throw 'Release tags must be annotated tag objects.' }
+            $tagCommit = (git rev-list -n 1 $tagRef).Trim()
+            if ($LASTEXITCODE -ne 0 -or $tagCommit -ne $sourceCommit) { throw 'Annotated tag does not resolve to the checked-out commit.' }
+            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to fetch origin/main.' }
+            $mainCommit = (git rev-parse origin/main).Trim()
+            if ($LASTEXITCODE -ne 0 -or $mainCommit -ne $tagCommit) { throw 'Release tag must point to the current origin/main commit.' }
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "source_commit=$sourceCommit" >> $env:GITHUB_OUTPUT
+
+  openssh-integration:
+    name: Real OpenSSH integration on release source
+    needs: validate-release-source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust and Tauri Linux prerequisites
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Exercise direct, ProxyJump and target OpenSSH paths
+        shell: bash
+        run: bash apps/desktop/scripts/run-openssh-integration.sh
+
+  windows-build:
+    name: Verify and build Windows release assets
+    needs: validate-release-source
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install and audit frontend dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm audit --audit-level high
+      - name: Verify frontend and command boundary
+        run: pnpm verify
+      - name: Install Rust quality and build tools
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+          cargo install tauri-cli --version 2.11.4 --locked
+          cargo install cargo-audit --version 0.22.2 --locked
+      - name: Verify Rust core
+        shell: pwsh
+        run: |
+          cargo audit --file apps/desktop/src-tauri/Cargo.lock
+          cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all -- --check
+          cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-features
+          # Rust 1.97 classifies localized MSVC import-library status stdout as
+          # linker_messages. Errors still fail; this is the only lint allow.
+          cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings -A linker-messages
+      - name: Build NSIS package
+        run: pnpm dist:win
+      - name: Clean-install, launch and uninstall smoke test
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -LiteralPath apps/desktop/src-tauri/target/release/bundle/nsis -Filter '*.exe' | Select-Object -First 1
+          if ($null -eq $installer) { throw 'NSIS installer not found.' }
+          if ($installer.Length -ge 40MB) { throw "Installer exceeds 40 MiB: $($installer.Length) bytes." }
+
+          $installDir = Join-Path $env:RUNNER_TEMP "RemoteDeck-clean-install-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          if (Test-Path -LiteralPath $installDir) { throw "Clean install target already exists: $installDir" }
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -PassThru
+          if (-not $install.WaitForExit(120000)) {
+            Stop-Process -Id $install.Id -Force -ErrorAction SilentlyContinue
+            throw 'Silent install timed out after 120 seconds.'
+          }
+          if ($install.ExitCode -ne 0) { throw "Silent install failed with $($install.ExitCode)." }
+
+          $binary = Join-Path $installDir 'RemoteDeck.exe'
+          if (-not (Test-Path -LiteralPath $binary)) { throw 'Installed RemoteDeck.exe not found.' }
+          $process = Start-Process -FilePath $binary -PassThru
+          try {
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 40; $attempt++) {
+              Start-Sleep -Milliseconds 500
+              $process.Refresh()
+              if ($process.HasExited) { throw "Installed app exited with $($process.ExitCode)." }
+              if ($process.MainWindowHandle -ne 0) { $ready = $true; break }
+            }
+            if (-not $ready) { throw 'Installed app did not create a main window.' }
+          } finally {
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+              if (-not $process.WaitForExit(10000)) { throw 'Installed app did not exit after termination.' }
+            }
+          }
+
+          $uninstaller = Join-Path $installDir 'uninstall.exe'
+          if (-not (Test-Path -LiteralPath $uninstaller)) { throw 'Tauri NSIS uninstaller was not found.' }
+          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru
+          if (-not $uninstall.WaitForExit(120000)) {
+            Stop-Process -Id $uninstall.Id -Force -ErrorAction SilentlyContinue
+            throw 'Silent uninstall timed out after 120 seconds.'
+          }
+          if ($uninstall.ExitCode -ne 0) { throw "Silent uninstall failed with $($uninstall.ExitCode)." }
+          for ($attempt = 0; $attempt -lt 20 -and (Test-Path -LiteralPath $installDir); $attempt++) {
+            Start-Sleep -Milliseconds 500
+          }
+          if (Test-Path -LiteralPath $binary) { throw 'RemoteDeck.exe remained after uninstall.' }
+          if (Test-Path -LiteralPath $installDir) { throw 'Install directory remained after uninstall.' }
+      - name: Prepare checksummed release assets
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release-source.outputs.version }}
+          SOURCE_COMMIT: ${{ needs.validate-release-source.outputs.source_commit }}
+        run: |
+          $source = Get-ChildItem -LiteralPath apps/desktop/src-tauri/target/release/bundle/nsis -Filter '*.exe' | Select-Object -First 1
+          if ($null -eq $source) { throw 'NSIS installer not found while preparing assets.' }
+          $assetDir = New-Item -ItemType Directory -Path release-assets
+          $asset = Join-Path $assetDir.FullName "RemoteDeck-$env:RELEASE_VERSION-win-x64-setup.exe"
+          Copy-Item -LiteralPath $source.FullName -Destination $asset
+          $signature = Get-AuthenticodeSignature -LiteralPath $asset
+          if ($signature.Status -ne 'NotSigned') { throw "Unexpected Authenticode status: $($signature.Status)" }
+          $hash = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $([IO.Path]::GetFileName($asset))" | Set-Content -LiteralPath (Join-Path $assetDir.FullName 'SHA256SUMS.txt') -Encoding utf8NoBOM
+          $manifest = [ordered]@{
+            version = $env:RELEASE_VERSION
+            platform = 'windows-x64'
+            installer = [IO.Path]::GetFileName($asset)
+            sha256 = $hash
+            bytes = (Get-Item -LiteralPath $asset).Length
+            authenticodeStatus = [string]$signature.Status
+            unsigned = $true
+            sourceCommit = $env:SOURCE_COMMIT
+          }
+          $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $assetDir.FullName 'release-manifest.json') -Encoding utf8NoBOM
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: RemoteDeck-release-assets-${{ github.sha }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  publish:
+    name: Verify round trip and publish GitHub Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [validate-release-source, openssh-integration, windows-build]
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: RemoteDeck-release-assets-${{ github.sha }}
+          path: release-assets
+      - name: Verify staged assets before creating a release
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release-source.outputs.version }}
+          SOURCE_COMMIT: ${{ needs.validate-release-source.outputs.source_commit }}
+        run: |
+          $installerName = "RemoteDeck-$env:RELEASE_VERSION-win-x64-setup.exe"
+          $installer = Join-Path $PWD "release-assets/$installerName"
+          $checksum = Join-Path $PWD 'release-assets/SHA256SUMS.txt'
+          $manifestPath = Join-Path $PWD 'release-assets/release-manifest.json'
+          $files = @(Get-ChildItem -LiteralPath release-assets -File)
+          if ($files.Count -ne 3) { throw "Expected exactly 3 release assets, found $($files.Count)." }
+          foreach ($path in @($installer, $checksum, $manifestPath)) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing release asset: $path" }
+          }
+          $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expectedChecksum = "$hash  $installerName"
+          if ((Get-Content -LiteralPath $checksum -Raw).Trim() -ne $expectedChecksum) { throw 'SHA256SUMS.txt does not match the installer.' }
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          if ($manifest.version -ne $env:RELEASE_VERSION -or $manifest.installer -ne $installerName -or $manifest.sha256 -ne $hash) { throw 'Release manifest identity or hash mismatch.' }
+          if ($manifest.sourceCommit -ne $env:SOURCE_COMMIT) { throw 'Release manifest source commit mismatch.' }
+          if ($manifest.bytes -ne (Get-Item -LiteralPath $installer).Length) { throw 'Release manifest size mismatch.' }
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer
+          if ($signature.Status -ne 'NotSigned' -or -not $manifest.unsigned -or $manifest.authenticodeStatus -ne 'NotSigned') {
+            throw 'Authenticode status does not match the unsigned release declaration.'
+          }
+      - name: Create or recover an unpublished draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $notes = @"
+          ## 简体中文
+
+          RemoteDeck $env:RELEASE_TAG 已完成 Tauri 2 + Rust 全新架构迁移，提供 SSH/ProxyJump、终端、SFTP、命令任务、遥测与进程管理、btop、隧道、远端代理、迁移、托盘和诊断能力。
+
+          Windows x64 安装包使用系统 WebView2/OpenSSH/ConPTY，不包含 Electron、Node.js 或 Chromium。请同时下载 SHA256SUMS.txt 校验安装包；当前安装包未进行 Authenticode 签名，此事实记录在 release-manifest.json。
+
+          ## English
+
+          RemoteDeck $env:RELEASE_TAG completes the Tauri 2 + Rust architecture migration with SSH/ProxyJump, terminals, SFTP, command jobs, telemetry and process control, btop, tunnels, remote agents, migration, tray integration, and diagnostics.
+
+          The Windows x64 installer uses the system WebView2, OpenSSH, and ConPTY and does not bundle Electron, Node.js, or Chromium. Verify it with SHA256SUMS.txt; the installer is currently not Authenticode-signed, as recorded in release-manifest.json.
+          "@
+          $releaseJson = gh release view $env:RELEASE_TAG --json isDraft,assets 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $release = $releaseJson | ConvertFrom-Json
+            if (-not $release.isDraft) { throw "Release $env:RELEASE_TAG is already public; refusing to mutate its assets." }
+            foreach ($asset in $release.assets) {
+              gh release delete-asset $env:RELEASE_TAG $asset.name --yes
+              if ($LASTEXITCODE -ne 0) { throw "Failed to remove stale draft asset $($asset.name)." }
+            }
+          } else {
+            gh release create $env:RELEASE_TAG --verify-tag --draft --title "RemoteDeck $env:RELEASE_TAG" --notes $notes
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to create draft release.' }
+          }
+          gh release edit $env:RELEASE_TAG --draft=true --title "RemoteDeck $env:RELEASE_TAG" --notes $notes
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to normalize draft release metadata.' }
+      - name: Upload assets to the draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ needs.validate-release-source.outputs.version }}
+        run: |
+          gh release upload $env:RELEASE_TAG `
+            "release-assets/RemoteDeck-$env:RELEASE_VERSION-win-x64-setup.exe" `
+            'release-assets/SHA256SUMS.txt' `
+            'release-assets/release-manifest.json'
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to upload draft release assets.' }
+      - name: Verify release API, download and independently verify draft assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ needs.validate-release-source.outputs.version }}
+          SOURCE_COMMIT: ${{ needs.validate-release-source.outputs.source_commit }}
+        run: |
+          $expectedNames = @("RemoteDeck-$env:RELEASE_VERSION-win-x64-setup.exe", 'SHA256SUMS.txt', 'release-manifest.json')
+          $release = $null
+          for ($attempt = 0; $attempt -lt 15; $attempt++) {
+            $release = gh release view $env:RELEASE_TAG --json isDraft,assets | ConvertFrom-Json
+            if ($LASTEXITCODE -eq 0 -and $release.isDraft) {
+              $observed = @($release.assets)
+              if ($observed.Count -eq $expectedNames.Count -and @($observed | Where-Object { -not $_.digest }).Count -eq 0) { break }
+            }
+            Start-Sleep -Seconds 2
+          }
+          if ($null -eq $release -or -not $release.isDraft) { throw 'Draft release metadata could not be verified.' }
+          $remoteAssets = @($release.assets)
+          if ($remoteAssets.Count -ne $expectedNames.Count) { throw "Release API returned $($remoteAssets.Count) assets instead of 3." }
+          foreach ($name in $expectedNames) {
+            $localPath = Join-Path $PWD "release-assets/$name"
+            $remote = @($remoteAssets | Where-Object name -eq $name)
+            if ($remote.Count -ne 1) { throw "Release API did not return exactly one $name asset." }
+            $localSize = (Get-Item -LiteralPath $localPath).Length
+            $localDigest = 'sha256:' + (Get-FileHash -LiteralPath $localPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($remote[0].size -ne $localSize -or $remote[0].digest -ne $localDigest) {
+              throw "Release API size or digest mismatch for $name."
+            }
+          }
+
+          $roundTrip = Join-Path $env:RUNNER_TEMP "RemoteDeck-release-roundtrip-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          New-Item -ItemType Directory -Path $roundTrip | Out-Null
+          gh release download $env:RELEASE_TAG --dir $roundTrip
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to download draft release assets.' }
+          $files = @(Get-ChildItem -LiteralPath $roundTrip -File)
+          if ($files.Count -ne 3) { throw "Round trip returned $($files.Count) assets instead of 3." }
+          $installerName = "RemoteDeck-$env:RELEASE_VERSION-win-x64-setup.exe"
+          $installer = Join-Path $roundTrip $installerName
+          $checksum = Join-Path $roundTrip 'SHA256SUMS.txt'
+          $manifestPath = Join-Path $roundTrip 'release-manifest.json'
+          foreach ($path in @($installer, $checksum, $manifestPath)) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing round-trip asset: $path" }
+          }
+          $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ((Get-Content -LiteralPath $checksum -Raw).Trim() -ne "$hash  $installerName") { throw 'Round-trip checksum mismatch.' }
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          if ($manifest.sha256 -ne $hash -or $manifest.sourceCommit -ne $env:SOURCE_COMMIT -or $manifest.bytes -ne (Get-Item -LiteralPath $installer).Length) {
+            throw 'Round-trip release manifest mismatch.'
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer
+          if ($signature.Status -ne 'NotSigned' -or -not $manifest.unsigned) { throw 'Round-trip Authenticode declaration mismatch.' }
+      - name: Publish verified release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release edit $env:RELEASE_TAG --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to publish the verified release.' }

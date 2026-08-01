@@ -2,106 +2,148 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "agent/**"]
   pull_request:
 
 permissions:
   contents: read
 
 jobs:
-  quality:
-    name: Quality (${{ matrix.os }})
+  frontend-quality:
+    name: Frontend quality (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           version: 11.9.0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Audit frontend dependencies
+        if: runner.os == 'Linux'
+        run: pnpm audit --audit-level high
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm test:integration
       - run: pnpm build
 
-  openssh-integration:
-    name: Docker OpenSSH integration
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 11.9.0
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: docker build -t remotedeck-openssh tests/fixtures/openssh
-      - run: docker network create remotedeck-ssh
-      - run: docker run --rm -d --name remotedeck-target --network remotedeck-ssh remotedeck-openssh
-      - run: docker run --rm -d --name remotedeck-openssh --network remotedeck-ssh -p 127.0.0.1:22222:22 -p 127.0.0.1:17890:17890 remotedeck-openssh
-      - name: Wait for OpenSSH
-        shell: bash
-        run: |
-          for attempt in {1..30}; do
-            if bash -c '</dev/tcp/127.0.0.1/22222' 2>/dev/null && docker exec remotedeck-openssh bash -c '</dev/tcp/remotedeck-target/22' 2>/dev/null; then exit 0; fi
-            sleep 1
-          done
-          docker logs remotedeck-openssh || true
-          docker logs remotedeck-target || true
-          exit 1
-      - run: pnpm --filter @remotedeck/desktop test:integration:openssh
-        env:
-          REMOTEDECK_OPENSSH_HOST: 127.0.0.1
-          REMOTEDECK_OPENSSH_PORT: 22222
-          REMOTEDECK_OPENSSH_TARGET_HOST: remotedeck-target
-          REMOTEDECK_OPENSSH_TARGET_PORT: 22
-          REMOTEDECK_REMOTE_FORWARD_PORT: 17890
-      - if: always()
-        run: |
-          docker stop remotedeck-openssh remotedeck-target || true
-          docker network rm remotedeck-ssh || true
-
-  windows-release-candidate:
-    name: Windows E2E and release artifacts
+  rust-quality:
+    name: Rust core (Windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           version: 11.9.0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test:e2e
-      - run: pnpm dist:win
-      - name: Portable launch smoke
+      - run: pnpm build
+      - name: Install Rust components
         shell: pwsh
         run: |
-          $portable = Get-ChildItem -LiteralPath apps/desktop/release -Filter '*portable.exe' | Select-Object -First 1
-          if ($null -eq $portable) { throw 'Portable artifact not found.' }
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./tests/manual/m9-packaged-smoke.ps1 -PortablePath $portable.FullName
-      - name: Clean NSIS install smoke
-        shell: pwsh
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+          cargo install cargo-audit --version 0.22.2 --locked
+      - name: Audit Rust dependencies
+        run: cargo audit --file apps/desktop/src-tauri/Cargo.lock
+      - run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all -- --check
+      - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-features
+      - name: Strict Clippy (ignore rustc's localized MSVC linker status message)
+        run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings -A linker-messages
+
+  openssh-integration:
+    name: Real OpenSSH integration (Ubuntu containers)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust and Tauri Linux prerequisites
+        shell: bash
         run: |
-          $installer = Get-ChildItem -LiteralPath apps/desktop/release -Filter '*setup.exe' | Select-Object -First 1
-          if ($null -eq $installer) { throw 'NSIS artifact not found.' }
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./tests/manual/m9-clean-install.ps1 -InstallerPath $installer.FullName
-      - uses: actions/upload-artifact@v6
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Run production OpenSSH paths against direct, jump and target fixtures
+        shell: bash
+        run: bash apps/desktop/scripts/run-openssh-integration.sh
+
+  windows-bundle:
+    name: Windows NSIS bundle, launch smoke and size gate
+    runs-on: windows-latest
+    needs: [frontend-quality, rust-quality, openssh-integration]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
-          name: RemoteDeck-1.0.1-windows-x64
-          path: |
-            apps/desktop/release/*.exe
-            apps/desktop/release/*.blockmap
+          version: 11.9.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Rust and Tauri CLI
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          cargo install tauri-cli --version 2.11.4 --locked
+      - run: pnpm dist:win
+      - name: Smoke-launch packaged Tauri binary
+        shell: pwsh
+        run: |
+          $binary = Resolve-Path 'apps/desktop/src-tauri/target/release/remotedeck.exe'
+          $process = Start-Process -FilePath $binary -PassThru
+          try {
+            $windowReady = $false
+            for ($attempt = 0; $attempt -lt 40; $attempt++) {
+              Start-Sleep -Milliseconds 500
+              $process.Refresh()
+              if ($process.HasExited) {
+                throw "RemoteDeck exited before opening a window with code $($process.ExitCode)."
+              }
+              if ($process.MainWindowHandle -ne 0) {
+                $windowReady = $true
+                break
+              }
+            }
+            if (-not $windowReady) { throw 'RemoteDeck process stayed alive but did not create a main window.' }
+            Write-Host "RemoteDeck main window handle: $($process.MainWindowHandle)"
+          } finally {
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+              $process.WaitForExit()
+            }
+          }
+      - name: Enforce lightweight installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -LiteralPath apps/desktop/src-tauri/target/release/bundle/nsis -Filter '*.exe' | Select-Object -First 1
+          if ($null -eq $installer) { throw 'Tauri NSIS installer not found.' }
+          $limit = 40MB
+          if ($installer.Length -ge $limit) { throw "Installer is $($installer.Length) bytes; limit is $limit bytes." }
+          Write-Host "RemoteDeck installer: $([math]::Round($installer.Length / 1MB, 2)) MiB"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: RemoteDeck-2.0.0-windows-x64
+          path: apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error

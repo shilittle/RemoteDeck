@@ -1,137 +1,86 @@
-# RemoteDeck User Guide (English)
+# RemoteDeck 2 user guide
 
-[简体中文](user-guide.zh-CN.md) · [Back to README](../README.md) · [Download releases](https://github.com/shilittle/RemoteDeck/releases)
+## Install and verify
 
-## 1. Before installation
+RemoteDeck 2 supports Windows 10/11 x64. Enable Windows OpenSSH Client under Optional Features and make sure the target Linux system runs OpenSSH Server.
 
-RemoteDeck supports Windows 10/11 x64 and includes its Electron/Node runtime. Remote targets must be Linux systems running OpenSSH Server. Structured monitoring requires `python3`; GPU and btop features degrade explicitly when their tools are unavailable.
-
-Download either the NSIS installer or portable EXE from GitHub Releases, then calculate SHA-256 and compare it exactly with the Release notes:
+After the RemoteDeck 2 artifact is formally published, download `RemoteDeck-<version>-win-x64-setup.exe` and `SHA256SUMS.txt` from this repository's GitHub Release, then run:
 
 ```powershell
-Get-FileHash .\RemoteDeck-*-win-x64-setup.exe -Algorithm SHA256
+Get-FileHash .\RemoteDeck-2.0.0-win-x64-setup.exe -Algorithm SHA256
 ```
 
-Official RemoteDeck v1.x assets are currently distributed without code signing and may trigger a Windows SmartScreen unknown-publisher warning. Download only from this repository's Releases page; do not treat same-named files from third-party mirrors as official builds.
+The digest must match exactly. The repository currently configures no Authenticode signing; rely on the recorded signature status for the exact artifact, and expect an unsigned installer to trigger SmartScreen's unknown-publisher warning. The installer configuration is per-user; Microsoft's bootstrapper downloads WebView2 when the system does not already have it. Before publication, consult the unchecked [release checklist](release-checklist.md) and [pending artifact record](release-manifest.md) instead of treating this guide as evidence that an installer exists.
 
-## 2. Installation and first run
+## First connection
 
-- NSIS installer: installs per user, lets you choose the destination, and can create Start-menu/desktop shortcuts.
-- Portable build: runs as one EXE. “Portable” means no installation; settings still use the current Windows user's application-data directory.
+1. Create a host with an alias, address, port, user, authentication method, and default workspace. You may instead import explicit ordinary hosts from an OpenSSH config.
+2. Select Scan keys. Verify the displayed SHA-256 through the server console, an administrator, or another independent trusted channel.
+3. Accept only an exact match. A later key change hard-fails. After confirming a legitimate server rotation, explicitly remove old trust, scan again, and verify the replacement.
+4. Open Terminal and create a tab. Enter passwords, keyboard-interactive answers, and private-key passphrases directly in that terminal; they are never stored by RemoteDeck.
 
-First-run onboarding offers two real paths:
+Connection tests, SFTP, tunnels, telemetry, and background commands use non-interactive OpenSSH. They require an available private key or ssh-agent. For a password-only host, authenticate in a terminal and deploy a public key before using background features.
 
-- Add a new host.
-- Migrate LabPulse SSH v0.1.0. RemoteDeck reads only the `config.json` selected through the native picker, previews it before importing, prevents duplicate imports, and keeps any legacy cleanup command disabled.
+## Workspaces
 
-## 3. Hosts and authentication
+### Hosts and keys
 
-Enter an alias, host/IP, port, username, and optional working directory. Authentication options are:
+- Search and group hosts; select a previously saved and trusted direct host for ProxyJump; configure timeouts, keepalive, compression, `IdentitiesOnly`, and the default directory. Trust the jump first, then scan and independently verify the target fingerprint through it.
+- Generate Ed25519 keys, inspect discovered private keys, and deploy a public key to a verified host.
+- Config import does not follow `Include` and ignores wildcard hosts, `Match`, and unsupported directives.
+- A host referenced as another saved profile's ProxyJump cannot be deleted until that reference is removed. Other deletion first retires new SFTP, terminal, and command work and waits for owned tasks, then blocks new repository connections and cleans tunnels, telemetry, and tracked btop. Only successful cleanup is followed by persisted removal of the host and its attached tunnel/command presets.
 
-- Password: requested when needed and kept in memory only.
-- Keyboard-interactive: answer server prompts in the connection dialog; answers remain memory-only.
-- Private key: select it with the native file picker; encrypted-key passphrases remain memory-only.
-- Windows OpenSSH agent: use keys from the current user's agent.
+### Terminal
 
-ProxyJump is intentionally limited to one level. The jump and target hosts are verified and authenticated separately.
+- Each tab is a real `ssh.exe` + ConPTY session. Open tabs in parallel, double-click to rename, search scrollback, copy/paste, resize, or create a new shell to reconnect.
+- xterm.js handles Unicode 11 and IME composition. `Ctrl+C` is sent to the remote process.
+- Keystrokes reach ConPTY through an IPv4-loopback-only WebSocket with a short-lived single-use ticket bound to the allowed origin and live session generation; they are not Tauri invoke payloads. Reconnect, close, host deletion, and quit invalidate the old channel.
+- Closing a tab stops only its owned SSH child. Hiding the window to the tray keeps sessions alive; tray Quit performs full cleanup.
 
-The first connection shows the algorithm, SHA-256 fingerprint, and endpoint. Compare the fingerprint through a server console, administrator, or another independent trusted channel before accepting it. A changed key hard-fails and shows both fingerprints; investigate first, then remove the old record manually only when the change is legitimate.
+### Files and transfers
 
-**Deploy public key**:
+- Browse directories; create, rename, and delete remote items. Directory deletion is recursive and confirmed.
+- Upload with native file/folder selection or native drag-in paths. Select a remote item and local directory to download.
+- Conflict policies are ask, overwrite, skip, and automatic rename. The task center shows progress, cancellation, and retry.
+- Overwrite never deletes the destination first: the complete result is written to an owned temporary path, the old destination is moved to an owned backup, and promotion is rolled back on failure. If rollback also fails, the preserved backup path is reported.
+- Retry re-resolves the current saved host/ProxyJump profile and revalidates the operation instead of reusing stale connection fields from the failed attempt.
+- Cancellation removes only valid UUID-marked temporary files owned by that job. Roots, traversal, download-basename escape, oversized trees, and ambiguous destructive paths are rejected. Host deletion retires new SFTP work and waits for direct operations and transfer transactions; connection edits to an active transfer's target or jump require stopping that transfer first.
 
-1. Reads the selected public-key material.
-2. Atomically updates remote `authorized_keys` through an app-owned temporary file.
-3. Deduplicates by key material.
-4. Opens a fresh connection using the new key.
-5. Changes the default authentication method only after verification succeeds.
+### Tunnels
 
-## 4. Terminal
+- LocalForward exposes a local listening port to a target reachable from the remote host.
+- RemoteForward exposes a remote listener to a target reachable from the local machine; external reachability depends on server `GatewayPorts`.
+- Each tunnel owns a separate SSH child and has autostart, recovery, capped backoff, revisioned health state, and bounded logs. Every reconnect resolves the current saved profile; connection edits to an active tunnel's target or jump require stopping the tunnel first. Stop/remove affects only that tunnel.
 
-Open **Terminal** after connecting and create a tab. Every tab is a real SSH PTY supporting bash, vim, tmux, btop, Unicode/IME, synchronized resizing, scrollback search, Ctrl+C, and text clipboard operations.
+### Monitoring
 
-- Closing a plain PTY ends that remote shell and cannot recover its processes.
-- Use tmux/screen for persistent work. The Codex workflow can use a deterministic RemoteDeck-owned tmux session.
-- Only HTTP(S) links are accepted; inspect the destination before opening it.
-- Free terminal input is outside the command classifier. L0/L1/L2 rules apply to the command library and fixed Codex operations.
+- The embedded collector is streamed to remote `python3 -u -` over stdin and is never installed remotely.
+- “Monitor this host automatically when the app starts” controls startup collection only; manual start remains available when unchecked. Background collection uses BatchMode and never opens a hidden password/passphrase prompt. Every reconnect resolves the current saved profile; connection edits to a target/jump used by an active collector or tracked btop watchdog require stopping that work first.
+- View CPU/load, memory/swap, network, disks, NVIDIA GPUs, and processes. History is memory-only and uses the lowest of configured retention, 3,600 records/16 MiB per host, and 8,192 records/64 MiB globally.
+- Each process row includes `/proc` start ticks. TERM/KILL atomically revalidates host, PID, start ticks, user, and command remotely; KILL is available only after a recent successful TERM for that exact identity and then shows a separate native Yes/No warning.
+- “Start btop with startup monitoring” applies only to auto-monitored hosts. It requires remote `btop`, `tmux`, and `timeout`; restart counts come from tmux rather than a placeholder. Missing tools are explicit and do not break structured monitoring.
+- btop ownership uses a stable installation nonce in app data. A later process from the same installation can adopt a matching marked session when btop start is requested (including startup); differently or unmarked sessions are refused. A new session self-terminates if the exact marker is not installed within 30 seconds. Explicit stop, host deletion, and quit clean only sessions tracked after creation/adoption and recheck the marker. Telemetry/btop cleanup is capped at 10 seconds inside the 12-second overall exit wait, so a network failure can require a later start-to-adopt followed by stop.
 
-Common shortcuts:
+### Commands and AI Agents
 
-| Shortcut | Action |
-| --- | --- |
-| `Ctrl+1…7` | Switch activity |
-| `Ctrl+Shift+T` | New terminal |
-| `Ctrl+J` | Open task center |
-| `Ctrl+,` | Open settings |
+- Rust reclassifies every one-off command and preset immediately before execution. L0 is read-only; L1 changes state and needs target confirmation; L2 covers destructive/privileged/reboot/signal operations and requires exact confirmation text.
+- Output and concurrency are bounded. Interactive commands are handed to a standard SSH PTY. Cancellation targets only the job's child.
+- Codex, Claude Code, Gemini CLI, and OpenCode support probe, install, login, start, resume, and update flows. Install/update is confirmed; account data remains inside each official CLI.
+- RemoteDeck never adds yolo, auto-approval, or sandbox-bypass options.
 
-## 5. Files and transfers
+## Settings, migration, and diagnostics
 
-The **Files** workspace uses SFTP and never constructs shell commands from paths. It supports:
+- Configure terminal fonts, telemetry interval/retention, download directory (manual entry or native folder picker), default Agent, tray behavior, and launch at login.
+- Migration first previews LabPulse SSH v0.1.0 or RemoteDeck v1 data. Hosts, tunnels, commands, and settings are individually selectable. The batch persists once, failures cannot leave partial imports, a source hash prevents duplicates, and legacy host trust is never imported.
+- Diagnostics default to Downloads and contain redacted state, capabilities, and trusted fingerprints. Passwords, keys, tokens, terminal content, and remote-command output are excluded.
 
-- Hidden files, new folders/empty files, rename, and delete.
-- Drag-and-drop or picker uploads and local-directory downloads.
-- Recursive directory transfer with skip/overwrite/rename conflict policies.
-- Byte progress, speed, cancellation, and retry for large files.
+## Shortcuts and uninstall
 
-Recursive operations use `lstat` and do not follow symbolic links. Uploads and downloads first write app-instance/job-owned temporary files and rename only after success. Cancellation cleans up only the exact paths owned by that job.
+- `Ctrl+1` through `Ctrl+7`: switch workspaces.
+- `Ctrl+Shift+T`: new terminal.
+- `Ctrl+J`: task center.
+- `Ctrl+,`: settings.
 
-## 6. SSH tunnels
+Uninstall through Windows Installed apps. User state is retained by default to prevent accidental profile loss. Export anything needed, then manually remove the RemoteDeck application-data directory as the current user if a complete purge is required.
 
-Save LocalForward or RemoteForward profiles. Each active tunnel owns a dedicated SSH connection and does not consume a terminal. TCP/HTTP health checks, failure backoff, and network recovery are built in.
-
-- A normal port conflict never terminates the process occupying that port.
-- Clash/Mihomo discovery is read-only; multiple candidates require a user choice.
-- A migrated legacy cleanup command remains disabled and is shown with a complete high-risk warning. It can run during recovery only after one-time explicit authorization.
-
-## 7. Monitoring, btop, and processes
-
-RemoteDeck streams its packaged Python collector to remote `python3 -u -` through an authenticated SSH channel. It does not install a remote file. Main applies size bounds and strict schema validation to JSONL samples.
-
-- Missing `python3`, GPU tools, or btop produces an explicit degraded state, never fabricated data.
-- The btop watchdog manages only sessions created by RemoteDeck and does not parse or log btop screen content.
-- Signals can target only a process owned by the current SSH user that still matches a fresh `ps` check.
-- SIGKILL requires a recent SIGTERM against the same process plus a second confirmation.
-
-## 8. Command library and Codex
-
-Presets can be global or host-specific. Main reloads the final command and calculates its effective risk immediately before execution:
-
-- L0: allowlisted read-only command; runs directly.
-- L1: displays the full target and command and requires confirmation.
-- L2: also requires the host alias or declared confirmation text.
-
-Declared risk is a floor and cannot downgrade main's classification. PTY commands open in a normal terminal; non-PTY jobs show bounded output in the task center and can be canceled.
-
-The Codex panel runs fixed capability probes and stable commands advertised by the installed CLI version. The install plan displays the official script and requires confirmation. Login uses device authentication or an SSH PTY. RemoteDeck never reads `~/.codex/auth.json`, accepts a token, parses TUI bytes, or adds a sandbox-bypass flag.
-
-## 9. Tray, quit, and login startup
-
-By default, closing the window hides it to the tray while main continues to own SSH sessions, transfers, monitoring, and tunnels. Only **Quit completely** or the operating-system quit path disposes every app-owned resource.
-
-Settings can:
-
-- Disable tray keepalive.
-- Start RemoteDeck after Windows login.
-- Start with the window hidden.
-
-## 10. Diagnostics and privacy
-
-**Export diagnostics** uses a native save dialog to create a ZIP containing:
-
-- Application version and runtime capabilities.
-- Redacted settings and anonymized profile counts.
-- Up to five recent category logs, each capped at 512 KiB.
-
-The archive excludes terminal/SFTP content, endpoint identities, passwords, private keys, passphrases, and Codex tokens. A second secret scan runs before the ZIP is written. Inspect the archive yourself before sharing it with maintainers.
-
-## 11. Troubleshooting
-
-1. Read the explicit state and error in Hosts, Tunnels, or Task Center.
-2. Never bypass a changed host key; verify the new fingerprint from the server console.
-3. Confirm remote OpenSSH, `python3`, and required ports are available.
-4. Run `Get-FileHash` for download corruption or source concerns, then compare the SHA-256 with the Release notes.
-5. Export and inspect diagnostics before attaching them to a GitHub Issue.
-6. Review [known limitations](known-limitations.md) and the feature-specific documentation.
-
-## 12. Uninstall
-
-Uninstall the NSIS build through Windows **Installed apps**. User data is retained by default to avoid accidental profile loss. Export anything you need, then remove the RemoteDeck application-data directory manually as the current user if desired. Deleting the portable EXE does not automatically remove its user-data directory.
+See the [security model](security.md), [testing guide](testing.md), and [known limitations](known-limitations.md).

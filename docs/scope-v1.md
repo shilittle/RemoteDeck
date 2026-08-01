@@ -1,4 +1,6 @@
-# RemoteDeck v1.0 scope
+# RemoteDeck v1.0 scope (historical)
+
+> This is the archived Electron v1 scope. RemoteDeck 2 is defined by [tauri2-rewrite.md](tauri2-rewrite.md) and the current [architecture](architecture.md).
 
 ## In scope
 
@@ -17,4 +19,3 @@ The center of the product is the interactive terminal. The application packages 
 - Automatic updater, formal code signing, formal release publication, or DynamicForward/SOCKS server support
 
 These exclusions do not weaken the required Windows application, Linux SSH workflow, tests, installer, portable package, documentation, or manual acceptance coverage.
-

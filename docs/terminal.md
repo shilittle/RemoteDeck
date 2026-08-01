@@ -1,35 +1,9 @@
-# Interactive terminals
+# Terminal
 
-RemoteDeck terminal tabs are real SSH PTYs. The Electron main process opens `ssh2.shell()` channels and owns their lifetime; xterm in the sandboxed renderer receives validated UTF-8 events and sends bounded input/resize requests over fixed IPC channels. Terminal input and full output are never written to application logs or persisted in profile storage.
+Terminal tabs are real Windows OpenSSH sessions attached to ConPTY through `portable-pty`. Rust owns the PTY master and child lifetime. xterm.js receives bounded, ordered output events; resize and lifecycle controls use typed Tauri commands, but keystrokes do not travel in invoke payloads. Instead, the renderer requests a short-lived endpoint and sends input over an IPv4-loopback WebSocket authenticated by a random 64-hex, single-use ticket bound to the live session generation.
 
-## Tab lifecycle
+The WebSocket handshake accepts only the exact ephemeral listener host, `/terminal-input` path, allowed Tauri/development origin, and unexpired ticket. Tickets expire after 30 seconds, a newer connection replaces the prior connection for that session generation, and reconnect/close/host retirement/shutdown invalidate tickets and connections. Message and frame size are capped at 64 KiB, renderer-side buffering applies backpressure, and CSP permits WebSocket connections only to IPv4 loopback. Authentication prompts therefore remain inside the PTY without creating a general local network service or a terminal-input Tauri command.
 
-- A new tab opens on the selected online host and enters that host's default workspace. A custom workspace is applied by a shell-safe `cd -- ...` command; paths containing spaces, quotes, or Chinese characters are supported.
-- Tabs can be created, selected by keyboard, renamed inline, closed, and reconnected. Closing a tab closes only its PTY channel, not sibling tabs or the underlying SSH connection.
-- Resize events from xterm's fit addon call SSH `setWindow(rows, cols, height, width)` on the matching channel.
-- Each reconnect increments a session generation so late bytes and close events from the old channel cannot corrupt the new one.
-- An unexpected close marks the tab offline and retains the existing xterm scrollback. “Reconnect” always inserts a visible separator and creates a new shell; it never claims to restore the old process. Persistent workflows are delegated to tmux in M7.
+Each session has an independent ID, host, title, state, dimensions, start time, exit code, error, and monotonically allocated generation. Output is decoded incrementally so split UTF-8 sequences are preserved, and pending output is emitted before exit. Reconnect replaces the owned child while retaining the tab identity and invalidating the prior input generation. Close and full quit terminate only registered children. Host deletion retires that host's terminal admission and waits within a fixed bound for starting/running sessions to finish owned cleanup before persistence can remove the profile.
 
-The main process keeps only live channel references and terminal metadata. Reloading the renderer can recover tab metadata, but prior output is intentionally not recorded for replay.
-
-## Input, text, search, and links
-
-xterm uses the Unicode 11 width tables and its native composition textarea for CJK IME input. Ctrl+C is passed to the remote PTY. Ctrl+Shift+C copies the current selection; Ctrl+Shift+V and the paste button use fixed Electron clipboard operations, rather than exposing a generic Electron or OS bridge.
-
-Search uses the xterm search addon and supports Enter/Shift+Enter traversal. HTTP(S) links are detected with the web-links addon and opened only through a validated main-process operation that rejects non-HTTP schemes. The renderer cannot open arbitrary local paths or commands.
-
-## Automated acceptance
-
-`tests/e2e/terminal.spec.ts` launches the production renderer in Electron against a real in-process SSH server and covers host-key acceptance, authentication, PTY output, keyboard input, CJK text insertion, clipboard paste, Ctrl+C, incremental search, multiple tabs, resize forwarding, inline rename, close, and new-shell reconnect.
-
-The Docker OpenSSH job additionally runs an actual Linux shell and verifies:
-
-- Bash command execution;
-- headless Vim startup and exit;
-- tmux server/session creation;
-- btop availability;
-- a working directory named `中文 路径`;
-- `stty size` after a 120×40 resize;
-- interrupting `sleep` with Ctrl+C.
-
-Use the container commands in `docs/ssh.md`; the terminal checks are part of the same `test:integration:openssh` suite.
+xterm.js enables Unicode 11, IME composition, 20,000-line scrollback, incremental search, clipboard buttons, resize observation, multiple tabs, and local tab renaming. Terminal input and output are neither logged nor persisted.

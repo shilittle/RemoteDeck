@@ -1,0 +1,53 @@
+[package]
+name = "remotedeck"
+version = "2.0.0"
+description = "A lightweight Tauri 2 SSH workspace"
+authors = ["RemoteDeck contributors"]
+license = "MIT"
+repository = "https://github.com/shilittle/RemoteDeck"
+edition = "2024"
+rust-version = "1.88"
+
+[lib]
+name = "remotedeck_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.6.3", features = [] }
+
+[dependencies]
+base64 = "0.22"
+chrono = { version = "0.4", features = ["clock", "serde"] }
+parking_lot = "0.12"
+portable-pty = "0.9.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tauri = { version = "=2.11.5", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
+thiserror = "2"
+tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
+tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
+uuid = { version = "1", features = ["serde", "v4"] }
+zip = { version = "4.0", default-features = false, features = ["deflate"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rfd = { version = "=0.17.2", default-features = false, features = ["xdg-portal"] }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+rfd = { version = "=0.17.2", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_System_SystemInformation"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+openssh-integration = []
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = "symbols"

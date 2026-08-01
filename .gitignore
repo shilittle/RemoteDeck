@@ -6,6 +6,8 @@ dist/
 out/
 release/
 apps/desktop/build/
+apps/desktop/dist-tauri/
+apps/desktop/src-tauri/target/
 coverage/
 playwright-report/
 test-results/

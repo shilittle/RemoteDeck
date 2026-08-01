@@ -1,37 +1,33 @@
-# Security model
+# RemoteDeck 2 security model
 
-## Process boundary
+## Trust boundaries
 
-The renderer has `contextIsolation`, sandboxing, web security, and navigation restrictions enabled; Node integration and insecure content are disabled. A deny-by-default permission handler, denied popups/webviews/navigation, and a restrictive CSP prevent the renderer from becoming a general browser or local-code bridge. Production CSP permits only application resources and no remote scripts.
+- The React renderer is trusted application UI but has no Node.js runtime and no generic process, shell, filesystem, or HTTP plugin. It can call only the typed Tauri commands registered in `lib.rs`.
+- Rust validates all persisted objects and every value used in OpenSSH argument vectors. Remote commands are generated from reviewed plans or reclassified immediately before execution.
+- Passwords, keyboard-interactive answers, key passphrases, and Agent credentials remain confined to the provider-owned interactive terminal path. Terminal input is carried by a CSP-restricted IPv4-loopback WebSocket whose short-lived single-use ticket is bound to the exact host header, path, allowed origin, session, and generation; frames and pending connections are bounded. Output reaches only the owning terminal through bounded session events. Secret input is never accepted by an invoke payload, and terminal input/output is excluded from persistence, logs, and diagnostics.
 
-Preload exposes no generic `send`, `invoke`, filesystem, shell, socket, or channel parameters. Main accepts IPC only from the current BrowserWindow's main frame. Zod validates every request and return value on both sides of the bridge.
+## SSH host identity
 
-The packaging hook disables Electron RunAsNode, NODE_OPTIONS, and inspector CLI behavior; enables cookie encryption and ASAR integrity; and restricts loading to the packaged ASAR.
+RemoteDeck uses a dedicated `known_hosts` and never modifies the user's global trust files. Scanning only displays candidates. Acceptance requires an exact host token, algorithm, public key and SHA-256 match, followed by a fresh scan immediately before the atomic write. Existing mismatched keys hard-fail; users must remove the old record and independently verify the replacement.
 
-## Data and credentials
+All SSH, SFTP, tunnel, telemetry, background-command, key-deployment, and Agent probe paths use system OpenSSH with external config disabled and strict host-key checking enabled. Output and execution time are bounded. A ProxyJump must be a saved direct-connect host. RemoteDeck generates its inner proxy command from typed host fields, applies a second `-F none` plus the dedicated trust file and jump identity, rejects shell metacharacters in every expansion-capable value, and quotes every generated argument; raw user-supplied proxy commands are never executed.
 
-Settings and SSH profiles are schema-versioned and atomically persisted. SSH passwords, keyboard-interactive answers, and key passphrases remain in memory only and are outside all persisted domain models. Connection attempts clear credential fields and private-key buffers in `finally` paths. Private-key discovery uses a native user-selected file dialog and persists only path and non-secret metadata.
+## Destructive operations
 
-Every SSH handshake uses an explicit host verifier. Unknown keys stop before authentication and require affirmative acceptance; changed keys hard-fail and cannot replace trust from the connection dialog. ProxyJump verifies and authenticates the jump and target independently. SFTP public-key deployment uses an application-owned temporary file, restrictive permissions, material-based deduplication, and atomic rename, followed by a new key-authenticated connection before changing the default auth profile. See `docs/ssh.md` for the operational flow.
+- Command risk is recalculated from the final command. L1 requires target confirmation; L2 requires exact confirmation text. Unknown commands do not fall below L1.
+- Recursive SFTP deletion rejects roots, traversal, ambiguous relative paths, controls, unsafe quoting, oversized trees, and symlink recursion. Transfer cleanup only removes temporary files bearing a valid RemoteDeck-owned UUID suffix. Overwrite preserves the existing target in an owned backup until temporary-file promotion succeeds and reports a preserved backup if rollback cannot finish.
+- Process signals bind host, PID, Linux process start ticks, user, and command. The remote operation rechecks that identity immediately before signaling. KILL requires a recent successful TERM for the exact identity plus a native Yes/No warning.
+- Tunnel and background-process cancellation targets only children registered by the current app instance. Registry transitions are serialized to prevent invisible orphan processes.
+- Installer/update Agent actions require explicit confirmation and run as the current remote user without permission-bypass flags.
 
-Owned resource cleanup, command confirmation, transfer temporary files, diagnostics, and Codex credential boundaries follow the invariants in `AGENTS.md`.
+Host profile mutation and deletion are coordinated with runtime ownership. Connection-critical edits to a target or direct ProxyJump route are blocked while affected transfers, tunnels, telemetry collectors, or tracked btop watchdogs are active. Deletion rejects a host still referenced as ProxyJump, retires SFTP/terminal/command admission and waits for owned work, blocks new repository-resolved work, cleans tunnels/telemetry/watchdogs, and only then atomically persists removal of the host and its attached tunnel/preset records.
 
-Pino writes structured category logs below `userData/logs`; launch-segmented rotation retains at most 20 owned files. The log hook recursively redacts secret-named fields plus inline/JSON passwords, passphrases, tokens, authorization values, URL credentials, API keys, OpenAI-style tokens, and private-key blocks. Terminal input and output are not application logs. Diagnostics adds a second scan after redaction and before ZIP creation.
+## Persistence and diagnostics
 
-Interactive terminal bytes cross only the fixed terminal IPC contracts and are not persisted, replayed, or included in diagnostics. Clipboard access is limited to bounded text read/write operations. Terminal links accept only validated HTTP(S) URLs before the main process delegates to the operating system; `file:`, executable, and custom schemes are rejected.
+State writes and migration batches use clone/validate/single-persist/swap transactions. A failed disk write leaves both in-memory and persisted state unchanged. Legacy host trust is never migrated.
 
-SFTP paths and entries cross fixed schemas; remote mutations never invoke a shell. Recursive operations use `lstat` and do not follow symbolic links. Transfers write instance/job-owned temporary names and rename only after success. Cancellation cleanup targets only those exact paths. Native pickers and dropped `File` objects establish user intent for local filesystem sources and destinations; the renderer has no general path-reading API.
+Diagnostics contain a manifest, redacted state, capabilities, and trusted-key fingerprints only. Recursive key-name and content checks reject likely credentials before an atomic ZIP is published. Terminal and remote-command output are excluded.
 
-Tunnel profiles persist endpoints and health policy but never credentials. Each active tunnel owns its SSH connection, local listener or remote bind, streams, and timers. Cleanup closes only those resources; ordinary port conflicts cannot trigger process termination. Clash/Mihomo discovery is read-only and requires the user to select a candidate. The optional legacy remote cleanup hook is disabled by default, stores the exact visible command and an explicit authorization flag, runs only after a bind failure, and emits an audit log entry. See `docs/tunnels.md`.
+## Distribution
 
-Telemetry is read-only until the user explicitly selects an owned process and requests a signal. Collector output is size-bounded and schema-validated before it reaches the renderer. SIGTERM/SIGKILL use fixed commands with a numeric PID only after both the newest snapshot and a fresh remote `ps` query match the current SSH user and full command. SIGKILL also requires a recent matching SIGTERM plus a second confirmation. Commands are never taken from collector text. The packaged collector is streamed over stdin and does not create a persistent remote file. btop output is discarded rather than parsed or logged. See `docs/monitoring.md`.
-
-Command presets are reloaded and classified in main at run time. Declared risk is a floor: readonly allowlisting may keep L0, unknown or mutating commands become at least L1, and destructive patterns become L2. L1 requires an affirmative confirmation after displaying the final command/target; L2 additionally requires exact typed text. Each non-PTY job owns one SSH exec channel, and cancellation cannot close another job or terminal. Free terminal input is deliberately outside this best-effort classifier. See `docs/commands-codex.md`.
-
-Codex integration executes fixed probes and version-advertised stable CLI commands only. The official installer/update fallback is immutable and main requires explicit confirmation. RemoteDeck never requests a key/token, reads `auth.json`, parses TUI bytes, or supplies a sandbox-bypass flag. Login and all interactive Codex modes run in the normal SSH PTY; tmux persistence uses a deterministic app-owned session name.
-
-Legacy migration reads only a native-picker path passed through its dedicated IPC contract, limits bytes, validates a narrow schema, and shows a full preview. Content hashes prevent duplicate import. Legacy cleanup commands are imported disabled, and legacy regex rules cannot lower risk; backreferences, lookbehind, nested quantified groups, invalid expressions, and oversized patterns are never executed. Closing to tray is distinct from quitting: hiding the BrowserWindow does not dispose background resources, while the `before-quit` path owns complete cleanup.
-
-## Trust boundaries still requiring user action
-
-RemoteDeck cannot decide whether an unknown host key belongs to the intended server, provide a user's SSH secret, or perform a real Codex account login. Those actions require explicit user confirmation or input; tests use local SSH fixtures and mocked external account boundaries.
+The production dependency graph excludes Electron, Chromium, `ssh2`, production Node.js, and generic Tauri shell/filesystem/HTTP plugins. The repository currently applies no Authenticode signature. This document does not assert that a release artifact exists: when one is published, users must inspect its recorded signature status, download it from the official GitHub repository, and verify `SHA256SUMS.txt`. Report vulnerabilities through [SECURITY.md](../SECURITY.md).

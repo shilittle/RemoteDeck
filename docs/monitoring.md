@@ -1,36 +1,15 @@
-# Structured monitoring and btop
+# Monitoring
 
-RemoteDeck monitoring has two deliberately separate paths: a versioned read-only collector supplies structured charts and process data, while btop remains an optional interactive terminal program. RemoteDeck never parses btop's ANSI screen.
+The Rust telemetry supervisor opens verified OpenSSH in batch mode and streams the embedded `packages/remote-collector/collector.py` to `python3 -u -` over stdin. Nothing is installed remotely. Strict JSONL samples cover CPU/load, memory/swap, network rates, disks, NVIDIA GPUs, and bounded process rows.
 
-## Collector transport and schema
+Checking “monitor this host automatically when the app starts” starts that host's collector at process startup. Manual start remains available when it is unchecked. Startup/background collection always uses OpenSSH batch mode, so it cannot surface password or passphrase prompts behind the window. The global reconnect switch applies to these app-owned collectors and uses eight capped attempts with backoff. Every attempt resolves the current saved host profile; connection-critical edits to the target or its direct ProxyJump route are rejected while an affected collector or tracked btop watchdog is active.
 
-`packages/remote-collector/collector.py` is packaged as an Electron resource. For each enabled online host, main opens an SSH exec channel running `python3 -u -`, streams the source through stdin, and does not install a remote file. The collector emits strict v1 JSONL with:
+Each JSONL record is rejected before allocation can grow past 512 KiB. Parsed records permit at most 128 disks, 32 GPUs, and 256 process rows; individual identity/display strings are bounded, including a 1,024-byte process command. At most 32 collectors run concurrently. History is memory-only: configured retention is further capped at 3,600 records/16 MiB per host and 8,192 records/64 MiB globally, with oldest-first eviction. Malformed, oversized, or inconsistent samples become explicit degraded/failed states. Status snapshots carry monotonic revisions, and the renderer ignores stale delivery while merging the subscribe-first initial snapshot.
 
-- total and per-core CPU, load averages, and optional temperature;
-- memory and swap totals/usage;
-- network totals and receive/send rates;
-- meaningful mounted filesystems;
-- uptime;
-- PID, PPID, user, CPU, memory, state, elapsed seconds, and full command snapshots;
-- NVIDIA GPU identity, utilization, memory, temperature and power when `nvidia-smi` is available;
-- NVIDIA compute-process PID and GPU-memory usage when available.
+Every process row includes Linux `/proc/<pid>/stat` start ticks in addition to PID, user, and full command. TERM/KILL binds the request to that exact displayed identity, then atomically re-reads start ticks, user, and command on the remote host, rechecks start ticks immediately before `kill`, and refuses a recycled or changed process. KILL is accepted only after a recent successful TERM for the same host/PID/start-ticks/user/command identity and a separate native Yes/No warning dialog.
 
-The main process validates every line with Zod before emitting it. A line over 4 MiB, malformed JSON, a schema mismatch, a sample timeout, channel error, collector exit, or network loss invalidates that generation and schedules bounded exponential restart. Generation checks discard stale output. A missing `python3` produces a stable dependency-missing state and an installation suggestion without affecting terminal, SFTP, or tunnels.
+The optional startup btop setting applies only to hosts selected for startup monitoring. It requires remote `btop`, `tmux`, and `timeout`. Its deterministic tmux session carries a RemoteDeck ownership option, configured rotation, and a remotely incremented restart counter.
 
-History is held only in application memory for the configured retention period. Old history samples discard process arrays after the next sample, keeping only the newest actionable process snapshot. IPC down-samples very large histories to at most 3,600 points for chart rendering. No telemetry is sent outside the user's SSH connection.
+Ownership is installation-scoped rather than process-scoped. A random 32-hex nonce is created once in the app-data `btop-owner-v2` file using a no-clobber publication step. A later RemoteDeck process using that same app-data directory may safely adopt an already marked session when btop start is requested; a same-named session with a different or missing owner marker is treated as a conflict and is never killed. During creation, the remote tmux bootstrap waits at most 30 seconds for the exact owner marker and self-terminates if publication is interrupted before the marker is set.
 
-## Dashboard and process safety
-
-The monitoring workspace renders CPU, memory, and network history with Apache ECharts, plus current temperature/uptime, GPU, disk, and searchable/sortable process views. Missing sensors, GPU, disks, or btop are normal empty states.
-
-Signals are restricted to the SSH user's processes. Before sending a signal, main requires the selected PID, user, and full command to match the newest validated collector snapshot, then queries `ps` again over SSH and compares user and command exactly. A mismatch aborts the action to reduce PID-reuse risk. SIGTERM is the first action; SIGKILL additionally requires a visible second confirmation and a matching SIGTERM attempt within 60 seconds. Signal commands contain only the validated numeric PID and fixed signal name. Delivery is audited without recording process command text.
-
-## btop
-
-The btop probe runs `command -v btop` and reads its version. “Open btop” creates a normal xterm terminal tab and runs `exec btop`, so all keyboard and resize behavior stays in the existing PTY implementation.
-
-The optional watchdog owns a separate PTY channel. It discards output without parsing it, restarts after exit or network recovery, supports a user-selected rotation period, and closes only its owned channel on stop, suspend, or application exit. If btop is absent, structured monitoring remains online.
-
-## Verification
-
-Unit tests cover valid/no-GPU data, malformed JSON, stale callbacks, crash, timeout, network recovery, missing Python, owner/command revalidation, TERM-before-KILL, btop absence, and watchdog restart/cleanup. Electron E2E streams collector JSONL through an in-process SSH server and verifies the real dashboard. The Docker OpenSSH job runs the packaged Python source against Linux `/proc`, verifies no-GPU degradation, probes and starts btop, and safely terminates an owned test process. Local Docker and WSL were unavailable on the development workstation, so that Linux acceptance remains an explicit CI gate.
+Explicit stop, host deletion, and normal quit clean only watchdogs tracked by the current process after creation or same-installation adoption, and recheck the stable marker before `tmux kill-session`. A hard application/network failure or an unreachable host can still leave a correctly marked remote watchdog running. Recovery requires a later btop start (including enabled startup) to adopt it before explicit stop can manage it. Telemetry/watchdog shutdown waits at most 10 seconds inside the application's 12-second overall exit deadline; reaching a deadline favors bounded local exit and may leave the remote session for later safe adoption.
