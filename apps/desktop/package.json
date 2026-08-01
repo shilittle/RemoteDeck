@@ -1,6 +1,6 @@
 {
   "name": "@remotedeck/desktop",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "description": "A lightweight Tauri 2 SSH workspace for Linux remote-development workflows",
   "author": "RemoteDeck contributors",

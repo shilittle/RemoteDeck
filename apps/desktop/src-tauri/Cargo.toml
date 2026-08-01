@@ -1,6 +1,6 @@
 [package]
 name = "remotedeck"
-version = "2.0.0"
+version = "2.0.1"
 description = "A lightweight Tauri 2 SSH workspace"
 authors = ["RemoteDeck contributors"]
 license = "MIT"

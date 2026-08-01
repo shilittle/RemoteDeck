@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.1 — 2026-08-01
+
+### Security
+
+- Updated `serde_with` from 3.17.0 to 3.21.0 to include the fix for GHSA-7gcf-g7xr-8hxj; the complete frontend, Rust, real OpenSSH, and Windows installer gates remain green.
+- Triaged the `glib` 0.18 advisory as not used by the Windows x64 distribution: it exists only in the Linux GTK dependency graph, is not compiled into the installer, and no affected `VariantStrIter` call is present.
+
+### Fixed
+
+- Bound repository context explicitly in the no-checkout release publisher so draft creation, asset round-trip verification, and publication work reliably from the artifact-only job.
+
 ## 2.0.0 — 2026-08-01
 
 ### Changed
