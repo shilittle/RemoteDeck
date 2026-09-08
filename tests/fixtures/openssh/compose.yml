@@ -1,0 +1,41 @@
+x-openssh-fixture: &openssh-fixture
+  build:
+    context: .
+    args:
+      BASE_IMAGE: ${REMOTEDECK_FIXTURE_BASE_IMAGE:-ubuntu:24.04@sha256:52df9b1ee71626e0088f7d400d5c6b5f7bb916f8f0c82b474289a4ece6cf3faf}
+  image: remotedeck-openssh-fixture:ubuntu-24.04
+  restart: "no"
+  volumes:
+    - type: bind
+      source: ${REMOTEDECK_FIXTURE_AUTHORIZED_KEYS:?set REMOTEDECK_FIXTURE_AUTHORIZED_KEYS}
+      target: /fixture/authorized_keys
+      read_only: true
+  networks:
+    - fixture
+
+services:
+  direct:
+    <<: *openssh-fixture
+    hostname: direct
+    environment:
+      REMOTEDECK_FIXTURE_NAME: direct
+    ports:
+      - "127.0.0.1:${REMOTEDECK_DIRECT_PORT:-22221}:22"
+
+  jump:
+    <<: *openssh-fixture
+    hostname: jump
+    environment:
+      REMOTEDECK_FIXTURE_NAME: jump
+    ports:
+      - "127.0.0.1:${REMOTEDECK_JUMP_PORT:-22222}:22"
+
+  target:
+    <<: *openssh-fixture
+    hostname: target
+    environment:
+      REMOTEDECK_FIXTURE_NAME: target
+
+networks:
+  fixture:
+    internal: false

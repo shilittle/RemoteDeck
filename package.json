@@ -1,8 +1,8 @@
 {
   "name": "remotedeck",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "private": true,
-  "description": "A lightweight Tauri 2 SSH workspace for Linux remote-development workflows",
+  "description": "A local OpenSSH workspace with a Rust service and a simple browser UI",
   "license": "MIT",
   "packageManager": "pnpm@11.9.0",
   "engines": {
@@ -10,16 +10,17 @@
     "pnpm": ">=11.0.0"
   },
   "scripts": {
-    "dev": "pnpm --filter @remotedeck/desktop dev",
-    "dev:web": "pnpm --filter @remotedeck/desktop dev:web",
-    "lint": "pnpm --filter @remotedeck/desktop lint",
-    "typecheck": "pnpm --filter @remotedeck/desktop typecheck",
-    "test": "pnpm --filter @remotedeck/desktop test",
-    "test:integration": "pnpm --filter @remotedeck/desktop test:integration",
-    "test:integration:openssh": "pnpm --filter @remotedeck/desktop test:integration:openssh",
-    "test:e2e": "pnpm --filter @remotedeck/desktop test:e2e",
-    "build": "pnpm --filter @remotedeck/desktop build",
-    "dist:win": "pnpm --filter @remotedeck/desktop dist:win",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm build"
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "pnpm --filter @remotedeck/web dev",
+    "lint": "pnpm --filter @remotedeck/web lint",
+    "typecheck": "pnpm --filter @remotedeck/web typecheck",
+    "test": "pnpm --filter @remotedeck/web test",
+    "test:integration": "pnpm --filter @remotedeck/web build && node scripts/verify-boundary.mjs && cargo test -p remotedeck-server",
+    "test:integration:openssh": "node scripts/run-openssh-integration.mjs",
+    "test:e2e": "pnpm --filter @remotedeck/web test:e2e",
+    "build": "pnpm --filter @remotedeck/web build && cargo build --release -p remotedeck-server",
+    "dist:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-win.ps1",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm --filter @remotedeck/web build && pnpm test:integration && cargo fmt --all -- --check && cargo test --workspace --all-features && cargo clippy --workspace --all-targets --all-features -- -D warnings -A linker-messages && pnpm test:e2e && pnpm build",
+    "test:e2e:openssh": "node scripts/run-openssh-integration.mjs --browser"
   }
 }

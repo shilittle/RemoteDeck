@@ -1,9 +1,14 @@
 packages:
-  - apps/*
+  - apps/web
   - packages/*
+
+strictPeerDependencies: true
+autoInstallPeers: false
 
 allowBuilds:
   esbuild: true
 
 overrides:
   brace-expansion: file:packages/brace-expansion-compat
+  "nanoid@<3.3.18": 3.3.18
+  "postcss@<=8.5.22": 8.5.23

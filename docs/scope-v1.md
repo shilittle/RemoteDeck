@@ -1,6 +1,6 @@
 # RemoteDeck v1.0 scope (historical)
 
-> This is the archived Electron v1 scope. RemoteDeck 2 is defined by [tauri2-rewrite.md](tauri2-rewrite.md) and the current [architecture](architecture.md).
+> **历史文档，不是当前架构说明。** This is the archived Electron v1 scope. RemoteDeck 2 is defined by the current [architecture](architecture.md) and browser [user guide](user-guide.md).
 
 ## In scope
 

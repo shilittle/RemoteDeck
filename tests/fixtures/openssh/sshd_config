@@ -1,0 +1,30 @@
+Port 22
+ListenAddress 0.0.0.0
+Protocol 2
+HostKey /etc/ssh/ssh_host_ed25519_key
+# Windows inbox ssh-keyscan 9.5 advertises a sntrup implementation it cannot use.
+# Keep this disposable interoperability fixture compatible without modifying any
+# user/server SSH configuration. See PowerShell/Win32-OpenSSH issue 2140.
+KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org
+PidFile /run/sshd.pid
+
+PermitRootLogin no
+AllowUsers remotedeck
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+UsePAM no
+StrictModes yes
+
+AllowAgentForwarding no
+AllowTcpForwarding yes
+GatewayPorts clientspecified
+PermitTunnel no
+PermitUserEnvironment no
+X11Forwarding no
+PrintMotd no
+LogLevel VERBOSE
+
+Subsystem sftp internal-sftp

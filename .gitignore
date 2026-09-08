@@ -8,6 +8,7 @@ release/
 apps/desktop/build/
 apps/desktop/dist-tauri/
 apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
 coverage/
 playwright-report/
 test-results/
@@ -20,3 +21,12 @@ test-results/
 *.p8
 *.pem
 *.key
+
+# Rust service and browser build/test artifacts
+/target/
+/.cache/
+/release-assets/
+apps/web/dist/
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/.e2e-runtime.json

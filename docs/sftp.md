@@ -2,7 +2,7 @@
 
 Rust drives system `sftp.exe` in batch mode over the same strict app-owned host trust as every other connection. Batch commands use bounded quoting and reject controls/newlines. Listings preserve spaces and Unicode while limiting entry/output sizes.
 
-The UI supports browsing, parent navigation, create, rename, recursive delete, native local file/folder selection, native Tauri drag-drop paths, recursive upload/download, and open-in-folder for completed local results. Background operations require key/agent authentication.
+The WebUI supports browsing, parent navigation, create, rename, recursive delete, Windows file/folder selection, browser drag-and-drop paths, recursive upload/download, and opening completed local results in the Windows file manager. Background operations require key/agent authentication.
 
 Transfers have bounded concurrency and explicit queued/running/cancelling/completed/failed/cancelled states. Conflict behavior is ask, overwrite, skip, or deterministic rename. Uploads and downloads first write an app-owned temporary path. An overwrite moves the existing destination to an app-owned backup, promotes the complete temporary result, then removes the backup; failed promotion attempts rollback, and a failed rollback preserves and reports the backup path instead of silently losing the original. Cancellation can clean only temporary paths bearing the current job's valid UUID ownership suffix. Destructive remote roots, traversal, relative ambiguity, basename escape, oversized trees, and symlink-recursion hazards are rejected.
 

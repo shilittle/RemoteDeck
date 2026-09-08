@@ -1,95 +1,66 @@
 # RemoteDeck 2
 
-[简体中文](#简体中文) · [English](#english) · [Releases](https://github.com/shilittle/RemoteDeck/releases) · [用户指南](docs/user-guide.zh-CN.md)
+RemoteDeck 是一个面向 Windows 10/11 x64 的本机 SSH 工作台。程序以 Rust 服务进程运行，在 `127.0.0.1` 提供简单 WebUI；启动后打开系统默认浏览器。浏览器关闭不会停止终端、文件传输、命令任务或隧道，重新打开页面即可从服务端状态恢复。
 
-RemoteDeck 2 是面向 Windows 10/11 x64 的轻量 Linux SSH 工作台。桌面端已完整迁移到 Tauri 2 + Rust，使用系统 WebView2 与 Windows OpenSSH，不再打包 Electron、Chromium、Node.js 或 `ssh2`。
+生产结构分为三层：`crates/remotedeck-core` 保存主机、信任、SSH/ConPTY、SFTP、任务、监控、隧道、Agent、迁移和诊断逻辑；`apps/server` 提供 Windows 适配、HTTP/SSE/WebSocket、生命周期和静态资源服务；`apps/web` 是 React、xterm.js 和 Vite WebUI。发布程序是 `remotedeck-server` 包生成的 `RemoteDeck.exe`，前端资源嵌入二进制，不携带 Electron、Tauri、WebView2 或生产 Node.js。
 
-RemoteDeck 2 is a lightweight Linux SSH workspace for Windows 10/11 x64. Its desktop runtime is fully migrated to Tauri 2 and Rust, using system WebView2 and Windows OpenSSH instead of bundling Electron, Chromium, Node.js, or `ssh2`.
+## 核心工作流
 
-## 简体中文
+- **主机**：保存和分组主机，导入明确的 OpenSSH config，扫描并核验 SHA-256 指纹，配置 ProxyJump，发现、生成和部署密钥。
+- **工作区**：打开持久 SSH/ConPTY 终端；浏览和传输 SFTP 文件；执行带风险复核的命令；启动 Codex、Claude、Gemini、OpenCode；查看监控、GPU、进程、btop 和双向隧道。
+- **任务**：查看跨主机的传输、命令、监控和隧道任务，取消、重试并返回对应工作区。
+- **设置**：调整终端和运行偏好、登录后启动、迁移、诊断和停止服务。
 
-### 下载
+首次连接的顺序是“保存主机 → 扫描并独立核对指纹 → 在终端内完成认证 → 使用后台功能”。密码和私钥口令只进入交互式 PTY，不进入 HTTP 请求、配置、日志或诊断包。
 
-RemoteDeck 2 的正式发布完成后，从 [GitHub Releases](https://github.com/shilittle/RemoteDeck/releases) 下载以下文件。发布前以 [发布清单](docs/release-checklist.md)中的未勾选状态和 [待填写制品记录](docs/release-manifest.md)为准：
+## 安装和运行要求
 
-| 文件 | 用途 |
-| --- | --- |
-| `RemoteDeck-<版本>-win-x64-setup.exe` | 当前用户范围的 NSIS 安装器 |
-| `SHA256SUMS.txt` | 安装器 SHA-256 校验值 |
-| `release-manifest.json` | 版本、平台、大小与哈希清单 |
+[下载最新 Windows 安装包](https://github.com/shilittle/RemoteDeck/releases/latest) · [v2.1.0 更新说明](docs/releases/v2.1.0.md)。升级前请先退出旧版本；后台操作不会弹出额外的命令行窗口。
 
-RemoteDeck 2 的发布目标只有 NSIS 安装包，不再发布会重复携带运行时的 portable 文件。小于 40 MiB 是正式制品门禁，并非尚未构建制品的预先结论；若系统缺少 WebView2，安装器配置会通过微软引导程序下载。仓库当前未配置 Authenticode 签名，使用正式制品前应检查发布记录中的签名状态，仅从本仓库下载并核对 SHA-256。
+终端用户需要 Windows 10/11 x64、Windows OpenSSH Client，以及可通过 OpenSSH 访问的 Linux SSH Server。安装包是当前用户范围的 NSIS；用户数据放在 `%APPDATA%\io.github.shilittle.remotedeck`，卸载保留这些数据。安装包不捆绑 Node.js、浏览器运行时或远端依赖。
 
-### 系统要求
+开发机需要 Node.js 24、pnpm 11、稳定版 Rust、Microsoft C++ Build Tools、NSIS `makensis.exe` 和 Docker（运行 OpenSSH 集成夹具时）。NSIS 可使用标准安装目录或已有 Tauri 缓存中的 `makensis.exe`，构建不依赖 `tauri-cli`。
 
-- Windows 10/11 x64，启用 Windows OpenSSH Client。
-- 远端为运行 OpenSSH Server 的 Linux。
-- 结构化监控需要远端 `python3`；GPU 与 btop 能力会显式降级。
-- 终端中的密码、键盘交互回答和私钥口令通过带单次票据的本机回环 WebSocket 直接进入 ConPTY，不会作为 Tauri invoke 参数或持久化数据。
-- SFTP、隧道、遥测和后台命令使用 OpenSSH 非交互模式，需要可用的私钥或 ssh-agent。交互认证请在终端内完成。
-
-### 完整功能
-
-- 主机分组、搜索、OpenSSH config 安全导入、基于已保存直连主机的严格 ProxyJump 与高级连接选项。
-- 应用独占 `known_hosts`；首次信任必须核验 SHA-256，密钥变化硬阻断并要求显式移除旧记录。
-- Ed25519 密钥生成、私钥发现与幂等 `authorized_keys` 部署。
-- 基于 ConPTY 与 xterm.js 的多标签真实 SSH 终端，支持 Unicode/IME、搜索、尺寸同步、重连、带来源/会话绑定的回环输入通道与自有会话清理。
-- SFTP 浏览、创建、重命名、递归删除，文件/目录选择与拖放上传，以及递归传输、事务化覆盖、冲突策略、进度、取消和按当前主机配置重试。
-- 独立 LocalForward/RemoteForward 隧道，含健康状态、修订序事件、有界日志、按当前主机配置退避重连和托管进程清理。
-- 不在远端落盘的 Python JSONL 遥测、有界历史、GPU/进程视图、含进程启动时钟复验与原生确认的 TERM/KILL 门禁，以及安装级所有权的 btop watchdog。
-- Rust 端 L0/L1/L2 命令复核、后台任务与 PTY 分流；Codex、Claude Code、Gemini CLI 和 OpenCode 的探测、安装/更新、登录、启动及 tmux 恢复。
-- 首次向导、统一任务中心、托盘常驻、登录启动、单实例恢复、脱敏诊断包。
-- 对 LabPulse SSH v0.1.0 与 RemoteDeck v1 数据进行预览、选择性、事务化、哈希幂等迁移；不会导入旧主机信任。
-
-### 开发与发布验证
+## 开发命令
 
 ```powershell
-corepack enable
 pnpm install --frozen-lockfile
+pnpm dev
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm test:integration
+pnpm test:e2e
+pnpm build
 pnpm verify
-cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all -- --check
-cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-features
-cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings -A linker-messages
 pnpm dist:win
+
+cargo fmt --all -- --check
+cargo test --workspace --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings -A linker-messages
 ```
 
-架构、安全边界和发布门禁见 [Tauri 2 重构说明](docs/tauri2-rewrite.md)、[架构](docs/architecture.md)、[测试](docs/testing.md)与[中文用户指南](docs/user-guide.zh-CN.md)。
+`pnpm dist:win` 先构建 `apps/web/dist`，再调用 `scripts/package-win.ps1` 构建 `cargo build --release -p remotedeck-server` 并用 `scripts/installer.nsi` 生成 `dist/RemoteDeck-<version>-win-x64-setup.exe`。`scripts/verify-release.ps1` 使用隔离 `--data-dir` 与 `--launch-file`，请求真实 `/health`、检查独立进程存活、调用 `--stop`，再完成静默卸载和用户数据保留检查；正常 runtime descriptor 的控制令牌不会被脚本读取。
 
-## English
+## 安全边界
 
-### Download
+服务器只监听 IPv4 loopback。启动时创建短期一次性浏览器票据，交换为 HttpOnly、SameSite 会话；受保护路由校验 Host、Origin、CSRF 和 WebSocket 票据。浏览器只使用显式 `/api/v1` 路由、SSE 事件流和终端 WebSocket，不拥有通用 shell、文件系统或代理能力。
 
-After the RemoteDeck 2 release is complete, download these assets from [GitHub Releases](https://github.com/shilittle/RemoteDeck/releases). Until then, the unchecked [release checklist](docs/release-checklist.md) and [pending artifact record](docs/release-manifest.md) are authoritative:
+RemoteDeck 使用应用专属 `known_hosts`，从不修改用户全局 OpenSSH 信任文件。首次或变化的主机密钥必须显示指纹、由用户明确接受并在写入前重新扫描；每条 SSH/SFTP/隧道/后台命令连接都启用严格主机密钥检查。服务只停止当前实例登记的子进程，终端输出和输入不写入日志。
 
-| File | Purpose |
-| --- | --- |
-| `RemoteDeck-<version>-win-x64-setup.exe` | Per-user NSIS installer |
-| `SHA256SUMS.txt` | Installer SHA-256 checksum |
-| `release-manifest.json` | Version, platform, size, and digest metadata |
+## 发布状态
 
-RemoteDeck 2 targets only an NSIS installer; it no longer publishes a portable artifact that duplicates the desktop runtime. Below 40 MiB is a gate for the exact release artifact, not a result asserted before that artifact exists. The installer configuration uses Microsoft's bootstrapper when WebView2 is absent. The repository currently configures no Authenticode signing; inspect the recorded signature status, download only from this repository, and verify SHA-256 before using a published artifact.
+发布目标只有 Windows x64 current-user NSIS，安装包必须小于 40 MiB。构建会记录 SHA-256 和 Authenticode 状态；当前仓库不包含签名密钥，也不会把未观察到的签名或发布结果写成事实。CI 和 [发布清单](docs/release-checklist.md) 是候选制品的证据来源。
 
-### Requirements
+`pnpm verify` 运行本地完整门禁；`pnpm test:e2e:openssh` 创建隔离 OpenSSH 夹具并执行真实浏览器业务和恢复流程。原生系统选择框、第三方 Agent 账户以及真实旧版升级需要单独验收。测试结果和安装包信息记录在[发布清单](docs/release-checklist.md)、[重构验收](docs/refactor-validation.md)与[弹窗修复验收](docs/windowless-processes.md)，未执行的项目会明确列出。
 
-- Windows 10/11 x64 with Windows OpenSSH Client enabled.
-- A Linux target running OpenSSH Server.
-- Remote `python3` for structured telemetry; GPU and btop features degrade explicitly.
-- Passwords, keyboard-interactive answers, and key passphrases travel from xterm.js to ConPTY through a single-use-ticket authenticated loopback WebSocket; they are never Tauri invoke payloads or persistent data.
-- SFTP, tunnels, telemetry, and background commands use OpenSSH batch mode and therefore require a working private key or ssh-agent. Use a terminal for interactive authentication.
+## 文档
 
-### Complete feature set
+- [架构](docs/architecture.md)
+- [安全模型](docs/security.md)
+- [测试矩阵](docs/testing.md)
+- [简体中文用户指南](docs/user-guide.zh-CN.md) / [English user guide](docs/user-guide.en.md)
+- [已知限制](docs/known-limitations.md)
+- [发布清单](docs/release-checklist.md) / [制品记录](docs/release-manifest.md)
 
-- Grouped/searchable hosts, safe OpenSSH-config import, strict saved-profile ProxyJump, and advanced connection options.
-- An app-owned `known_hosts`; explicit SHA-256 verification on first use, hard failure on changed keys, and explicit trust removal.
-- Ed25519 generation, private-key discovery, and idempotent `authorized_keys` deployment.
-- Real multi-tab SSH terminals through ConPTY and xterm.js, including Unicode/IME, search, resize synchronization, reconnect, a session/origin-bound loopback input channel, and owned-session cleanup.
-- SFTP browse/create/rename/recursive-delete, native file/folder selection and drag-in upload, plus recursive transfers, transactional overwrite, conflict policies, progress, cancellation, and retry against the current saved host profile.
-- Dedicated LocalForward/RemoteForward processes with health state, revisioned events, bounded logs, reconnect against the current saved host profile, and owned-process cleanup.
-- Non-persistent Python JSONL telemetry, bounded history, GPU/process views, process start-time identity revalidation, native TERM/KILL escalation confirmation, and an installation-owned btop watchdog.
-- Rust-enforced L0/L1/L2 command review, bounded background jobs, and PTY handoff; probe/install/update/login/start/tmux-resume flows for Codex, Claude Code, Gemini CLI, and OpenCode.
-- First-run onboarding, unified task center, tray keepalive, launch at login, single-instance restore, and redacted diagnostics.
-- Previewed, selective, transactional, hash-idempotent migration from LabPulse SSH v0.1.0 and RemoteDeck v1; legacy host trust is deliberately not imported.
-
-See the [English user guide](docs/user-guide.en.md), [architecture](docs/architecture.md), [security model](docs/security.md), and [testing guide](docs/testing.md).
-
-The original LabPulse PowerShell application remains under [`legacy/labpulse-v0.1.0`](legacy/labpulse-v0.1.0/README.md). RemoteDeck is licensed under the [MIT License](LICENSE).
+`docs/tauri2-rewrite.md`、`docs/scope-v1.md`、`docs/execution-plan.md` 和 `docs/baseline-v0.1.md` 是历史审计材料。它们保留旧版本决策或基线，不描述当前生产实现。

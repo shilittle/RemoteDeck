@@ -1,6 +1,6 @@
 # RemoteDeck v1.0 execution plan (historical)
 
-> This document records the completed Electron v1 milestones. It is retained for audit history and does not describe the RemoteDeck 2 release architecture. See [tauri2-rewrite.md](tauri2-rewrite.md).
+> **历史文档，不是当前架构说明。** This document records the completed Electron/Tauri milestones. It is retained for audit history; current implementation and release gates are in [architecture.md](architecture.md) and [release-checklist.md](release-checklist.md).
 
 The development specification is the highest-level contract. Milestones are sequential; each is committed only after its checks pass.
 

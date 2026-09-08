@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.1.0 — 2026-09-08
+
+### Security
+
+- Updated the `brace-expansion` compatibility facade to 5.0.9 and pinned patched `nanoid` 3.3.18 and `postcss` 8.5.23 transitive dependencies, clearing GHSA-rgw5-rvv9-x895, GHSA-2v37-7h3g-55p8, and GHSA-fxqj-rqcc-2cmp from the pnpm audit.
+- Moved strict peer-dependency policy into `pnpm-workspace.yaml`, where pnpm 11 actually reads non-registry project settings.
+
+### Fixed
+
+- Prevented console popups from SSH probes, telemetry, commands, key tools and other native helpers with a shared hidden-process constructor. Both debug and release services use the Windows GUI subsystem.
+- Preserved live ConPTY terminals across browser reloads and connection loss, prevented replay from injecting terminal input, and confirmed actual child exit during cleanup.
+- Made release verification wait for NSIS uninstallation to finish before restoring existing installation metadata, and preserved recovery backups on failure.
+
+- Kept strict Clippy green on Rust 1.95 with an equivalent telemetry monitor-generation guard.
+- Added push CI coverage for `codex/**` branches, exercised generated ProxyCommand syntax against Windows OpenSSH, and removed the stale 2.0.0 label from ordinary Windows CI artifacts.
+- Fixed release validation ordering so `apps/web/dist` exists before every Rust server compile, checked the Linux `rfd` XDG portal dependency, installed NSIS independently on Windows runners, and restored pre-existing per-user shell state after an isolated installer smoke test.
+
+### Changed
+
+- Replaced the Tauri/WebView2 desktop shell with the Rust `remotedeck-server` local service and the `@remotedeck/web` browser client. The service owns SSH/ConPTY sessions and background tasks across browser closure and exposes explicit HTTP, SSE and terminal WebSocket boundaries.
+- Switched the release target to a current-user NSIS installer containing `RemoteDeck.exe` with embedded `apps/web/dist`; the installer has no portable, Electron, Tauri, WebView2 or production Node.js payload and must remain below 40 MiB.
+- Added runtime-descriptor and loopback-API readiness checks, bounded terminal replay, service lifecycle documentation, and a release candidate workflow that records artifacts without publishing them.
+
 ## 2.0.1 — 2026-08-01
 
 ### Security

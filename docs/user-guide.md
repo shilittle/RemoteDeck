@@ -1,25 +1,14 @@
-# RemoteDeck User Guide / 用户指南
+# RemoteDeck 2 user guide / 用户指南
 
-Choose a language:
+- [简体中文](user-guide.zh-CN.md)
+- [English](user-guide.en.md)
 
-- [简体中文用户指南](user-guide.zh-CN.md)
-- [English user guide](user-guide.en.md)
+Current architecture and operational guarantees:
 
-Related release documentation:
+- [Architecture](architecture.md)
+- [Security model](security.md)
+- [Testing](testing.md)
+- [Known limitations](known-limitations.md)
+- [Release checklist](release-checklist.md)
 
-- [安全模型 / Security model](security.md)
-- [测试矩阵 / Test matrix](testing.md)
-- [已知限制 / Known limitations](known-limitations.md)
-
----
-
-请选择语言：
-
-- [简体中文用户指南](user-guide.zh-CN.md)
-- [English user guide](user-guide.en.md)
-
-相关发布文档：
-
-- [安全模型 / Security model](security.md)
-- [测试矩阵 / Test matrix](testing.md)
-- [已知限制 / Known limitations](known-limitations.md)
+The former Electron/Tauri planning and implementation notes are retained as historical audit material. They are not instructions for the current local-service/WebUI implementation.

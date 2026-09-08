@@ -1,4 +1,6 @@
-# LabPulse SSH v0.1.0 baseline audit
+# Archived: LabPulse SSH v0.1.0 baseline audit
+
+> **历史基线，不是当前功能或安全声明。** Current behavior is documented in [architecture.md](architecture.md) and [known-limitations.md](known-limitations.md).
 
 Audit source: Git commit `75301fee84e2b5d9c3409a207d712122d652200d` (`v0.1.0`). The exact tracked files were moved without content changes to `legacy/labpulse-v0.1.0/`; Git rename detection preserves history.
 
@@ -40,4 +42,3 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\LabPulseSSH.ps1 -SelfT
 ```
 
 The self-test still requires the original SSH aliases and remote host. Archiving does not fabricate those external credentials or endpoints.
-

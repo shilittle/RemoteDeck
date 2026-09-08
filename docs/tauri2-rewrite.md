@@ -1,4 +1,6 @@
-# RemoteDeck 2 — Tauri 2 原生重构
+# Archived: RemoteDeck 2 — Tauri 2 原生重构
+
+> **历史文档，不是当前架构说明。** RemoteDeck 后续全量重构为 Rust 本机服务 + 简单 WebUI；当前实现见 [architecture.md](architecture.md)。本文件只保留旧版 Tauri 决策，供迁移和审计追溯。
 
 ## 架构决策
 

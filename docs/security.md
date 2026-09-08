@@ -1,33 +1,33 @@
 # RemoteDeck 2 security model
 
-## Trust boundaries
+RemoteDeck is a single-user Windows local service. The browser is an untrusted UI client of a loopback API; it is not granted local shell, filesystem, credential, or arbitrary network authority. The server and core enforce the same checks for WebUI requests, recovery, and background workers.
 
-- The React renderer is trusted application UI but has no Node.js runtime and no generic process, shell, filesystem, or HTTP plugin. It can call only the typed Tauri commands registered in `lib.rs`.
-- Rust validates all persisted objects and every value used in OpenSSH argument vectors. Remote commands are generated from reviewed plans or reclassified immediately before execution.
-- Passwords, keyboard-interactive answers, key passphrases, and Agent credentials remain confined to the provider-owned interactive terminal path. Terminal input is carried by a CSP-restricted IPv4-loopback WebSocket whose short-lived single-use ticket is bound to the exact host header, path, allowed origin, session, and generation; frames and pending connections are bounded. Output reaches only the owning terminal through bounded session events. Secret input is never accepted by an invoke payload, and terminal input/output is excluded from persistence, logs, and diagnostics.
+## Browser and local API
 
-## SSH host identity
+- The service binds only to IPv4 loopback and rejects unexpected Host and Origin values.
+- Startup creates a short-lived, one-time bootstrap ticket. The browser exchanges it for an HttpOnly, SameSite session cookie and a CSRF token; tickets cannot be replayed.
+- Every state-changing HTTP route checks the session and CSRF token. Terminal WebSockets additionally require a generation-bound, one-time ticket, exact path, Host and Origin, and bounded frames/connections.
+- The browser can call only typed `/api/v1` business routes, the sequenced SSE stream, and the terminal WebSocket. There is no generic shell, filesystem, HTTP proxy, or embedded browser runtime.
+- Terminal input/output is excluded from logs, diagnostics and persisted state. Each live session keeps at most 1 MiB of replay data in memory.
 
-RemoteDeck uses a dedicated `known_hosts` and never modifies the user's global trust files. Scanning only displays candidates. Acceptance requires an exact host token, algorithm, public key and SHA-256 match, followed by a fresh scan immediately before the atomic write. Existing mismatched keys hard-fail; users must remove the old record and independently verify the replacement.
+## SSH identity and credentials
 
-All SSH, SFTP, tunnel, telemetry, background-command, key-deployment, and Agent probe paths use system OpenSSH with external config disabled and strict host-key checking enabled. Output and execution time are bounded. A ProxyJump must be a saved direct-connect host. RemoteDeck generates its inner proxy command from typed host fields, applies a second `-F none` plus the dedicated trust file and jump identity, rejects shell metacharacters in every expansion-capable value, and quotes every generated argument; raw user-supplied proxy commands are never executed.
+The core uses an application-owned `known_hosts` file and never mutates the user's global OpenSSH files. Scanning only displays candidates. Acceptance requires an exact host token, algorithm, public key and SHA-256 match, followed by a fresh scan immediately before an atomic write. An existing changed key hard-fails until the user removes the old trust and independently verifies the replacement.
 
-## Destructive operations
+Every SSH, SFTP, command, telemetry, key-deployment and tunnel invocation uses system OpenSSH with external config disabled where required, strict host-key checking, the dedicated trust file, bounded output and validated arguments. ProxyJump is resolved from a saved direct host profile; arbitrary proxy commands and shell metacharacters are rejected.
 
-- Command risk is recalculated from the final command. L1 requires target confirmation; L2 requires exact confirmation text. Unknown commands do not fall below L1.
-- Recursive SFTP deletion rejects roots, traversal, ambiguous relative paths, controls, unsafe quoting, oversized trees, and symlink recursion. Transfer cleanup only removes temporary files bearing a valid RemoteDeck-owned UUID suffix. Overwrite preserves the existing target in an owned backup until temporary-file promotion succeeds and reports a preserved backup if rollback cannot finish.
-- Process signals bind host, PID, Linux process start ticks, user, and command. The remote operation rechecks that identity immediately before signaling. KILL requires a recent successful TERM for the exact identity plus a native Yes/No warning.
-- Tunnel and background-process cancellation targets only children registered by the current app instance. Registry transitions are serialized to prevent invisible orphan processes.
-- Installer/update Agent actions require explicit confirmation and run as the current remote user without permission-bypass flags.
+Passwords, keyboard-interactive answers, private-key passphrases and Agent credentials remain inside the provider-owned interactive PTY. They are never sent as JSON command parameters, persisted, logged, or included in diagnostics. Non-interactive background work requires a usable key or ssh-agent.
 
-Host profile mutation and deletion are coordinated with runtime ownership. Connection-critical edits to a target or direct ProxyJump route are blocked while affected transfers, tunnels, telemetry collectors, or tracked btop watchdogs are active. Deletion rejects a host still referenced as ProxyJump, retires SFTP/terminal/command admission and waits for owned work, blocks new repository-resolved work, cleans tunnels/telemetry/watchdogs, and only then atomically persists removal of the host and its attached tunnel/preset records.
+## Process and remote-operation safety
 
-## Persistence and diagnostics
+The service registers every child it starts and may stop only that owned child. Tunnel, telemetry, btop and command workers use generation and revision checks so late output cannot revive deleted work or overwrite newer state. Windows startup and uninstall remove only the RemoteDeck startup value and installed files; they do not terminate arbitrary processes.
 
-State writes and migration batches use clone/validate/single-persist/swap transactions. A failed disk write leaves both in-memory and persisted state unchanged. Legacy host trust is never migrated.
+Command risk is recalculated from the final command immediately before execution. L0 read-only operations can run directly; L1 state-changing operations require target confirmation; L2 destructive, privileged, reboot and signal operations require exact confirmation text. Agent install/update actions are explicit and never add auto-approval or sandbox-bypass flags.
 
-Diagnostics contain a manifest, redacted state, capabilities, and trusted-key fingerprints only. Recursive key-name and content checks reject likely credentials before an atomic ZIP is published. Terminal and remote-command output are excluded.
+SFTP rejects traversal, ambiguous roots, controls, oversized trees and unsafe recursive symlink operations. Transfer overwrite writes a complete owned temporary result, moves the existing destination to an owned backup, promotes the result and rolls back on failure. Cancellation cleans only temporary files bearing the current job's valid ownership suffix. Process signals revalidate host, PID, user, command and Linux start ticks immediately before TERM/KILL.
 
-## Distribution
+## Persistence and release
 
-The production dependency graph excludes Electron, Chromium, `ssh2`, production Node.js, and generic Tauri shell/filesystem/HTTP plugins. The repository currently applies no Authenticode signature. This document does not assert that a release artifact exists: when one is published, users must inspect its recorded signature status, download it from the official GitHub repository, and verify `SHA256SUMS.txt`. Report vulnerabilities through [SECURITY.md](../SECURITY.md).
+State and migration writes use validate/clone/atomic-replace transactions. The v2 app-data root, backup, dedicated trust file and btop ownership marker are retained across browser closure, service restart and uninstall. Diagnostics include redacted state, capabilities and trusted fingerprints only.
+
+The production graph excludes Electron, Chromium, WebView2, production Node.js and Tauri. The Windows release is a current-user NSIS installer below 40 MiB. The repository does not sign binaries; CI records the actual Authenticode status and SHA-256 for each candidate. This document does not assert that a candidate has passed until the [release checklist](release-checklist.md) contains evidence.

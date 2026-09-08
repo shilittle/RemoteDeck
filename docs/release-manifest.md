@@ -1,20 +1,25 @@
-# RemoteDeck 2.0.0 release artifacts
+# Release manifest record
 
-No RemoteDeck 2 artifact is asserted by this document yet. Final values will be recorded only from the exact Windows x64 NSIS release candidate after clean install, launch, uninstall, Authenticode-status inspection, and independent checksum verification. Generated binaries remain outside Git; only after every release gate passes may the GitHub Release publish the installer together with `SHA256SUMS.txt` and `release-manifest.json`.
+No release artifact is asserted by this source document. The final values must be generated from the exact Windows x64 NSIS candidate by `scripts/package-win.ps1` and verified by `scripts/verify-release.ps1`.
 
-| Artifact | Bytes | SHA-256 | Signature |
-| --- | ---: | --- | --- |
-| `RemoteDeck-2.0.0-win-x64-setup.exe` | Pending exact build | Pending exact build | Pending inspection |
+The generated `dist/release-manifest.json` records at least:
 
-Required evidence before publication:
+```json
+{
+  "version": "2.1.0",
+  "platform": "windows-x64",
+  "installer": "RemoteDeck-2.1.0-win-x64-setup.exe",
+  "sha256": "<lowercase sha256>",
+  "bytes": 0,
+  "authenticodeStatus": "NotSigned",
+  "unsigned": true,
+  "binary": "RemoteDeck.exe",
+  "webAssets": "embedded in RemoteDeck.exe",
+  "installerScope": "currentUser",
+  "appData": "%APPDATA%\\io.github.shilittle.remotedeck"
+}
+```
 
-- final source commit and `v2.0.0` tag;
-- complete frontend and Rust gate output/counts, including explicit skips and their external prerequisites;
-- NSIS build path and size below 40 MiB;
-- unpackaged and clean-installed window smoke results;
-- silent uninstall result;
-- Authenticode status;
-- local SHA-256, uploaded byte count/digest, and independent post-upload download hash;
-- GitHub Actions URLs for the exact release commit/tag.
+`dist/SHA256SUMS.txt` must contain the same digest and exact installer file name. The candidate must pass clean installation, runtime descriptor/API readiness, independent process liveness, silent uninstall, user-data retention and the 40 MiB ceiling before a maintainer considers publication. A file path, manifest or CI message without the corresponding binary is not evidence of a release.
 
-The release configuration accepts no portable or blockmap artifact: RemoteDeck 2 deliberately targets one lightweight NSIS installer using the system WebView2 and Windows OpenSSH. This target description does not fill the pending evidence above.
+The current release workflow uploads a reviewable candidate artifact and does not publish a GitHub Release. Publication, signing and post-upload round-trip verification require explicit authorization and must be recorded separately.
