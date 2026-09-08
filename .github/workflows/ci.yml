@@ -75,7 +75,9 @@ jobs:
           rustup default stable
       - name: Install cargo-audit
         shell: pwsh
-        run: cargo install cargo-audit --version 0.22.2 --locked
+        # This is a validation tool, not a shipped binary. Avoid spending most
+        # of a clean Windows job optimizing the auditor before tests can run.
+        run: cargo install cargo-audit --version 0.22.2 --locked --debug
       - name: Audit Rust dependencies
         shell: pwsh
         run: cargo audit --file Cargo.lock
@@ -143,7 +145,10 @@ jobs:
         shell: pwsh
         run: |
           choco install nsis --yes --no-progress
-          makensis.exe /VERSION
+          $nsis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          if (-not (Test-Path -LiteralPath $nsis)) { $nsis = "$env:ProgramFiles\NSIS\makensis.exe" }
+          & $nsis /VERSION
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS compiler verification failed.' }
       - name: Build current-user NSIS package
         run: pnpm dist:win
       - name: Clean install, loopback ready API and uninstall smoke test

@@ -120,7 +120,10 @@ jobs:
         shell: pwsh
         run: |
           choco install nsis --yes --no-progress
-          makensis.exe /VERSION
+          $nsis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          if (-not (Test-Path -LiteralPath $nsis)) { $nsis = "$env:ProgramFiles\NSIS\makensis.exe" }
+          & $nsis /VERSION
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS compiler verification failed.' }
       - name: Verify source before packaging
         run: pnpm verify
       - name: Build current-user NSIS package
