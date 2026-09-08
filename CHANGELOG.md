@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- Aligned local and CI builds on Rust 1.98.0 and adopted the current strict Clippy checks without suppressing warnings.
 - Prevented console popups from SSH probes, telemetry, commands, key tools and other native helpers with a shared hidden-process constructor. Both debug and release services use the Windows GUI subsystem.
 - Preserved live ConPTY terminals across browser reloads and connection loss, prevented replay from injecting terminal input, and confirmed actual child exit during cleanup.
 - Made release verification wait for NSIS uninstallation to finish before restoring existing installation metadata, and preserved recovery backups on failure.

@@ -19,7 +19,7 @@ RemoteDeck 是一个面向 Windows 10/11 x64 的本机 SSH 工作台。程序以
 
 终端用户需要 Windows 10/11 x64、Windows OpenSSH Client，以及可通过 OpenSSH 访问的 Linux SSH Server。安装包是当前用户范围的 NSIS；用户数据放在 `%APPDATA%\io.github.shilittle.remotedeck`，卸载保留这些数据。安装包不捆绑 Node.js、浏览器运行时或远端依赖。
 
-开发机需要 Node.js 24、pnpm 11、稳定版 Rust、Microsoft C++ Build Tools、NSIS `makensis.exe` 和 Docker（运行 OpenSSH 集成夹具时）。NSIS 可使用标准安装目录或已有 Tauri 缓存中的 `makensis.exe`，构建不依赖 `tauri-cli`。
+开发机需要 Node.js 24、pnpm 11、Rust 1.98.0（由 `rust-toolchain.toml` 固定）、Microsoft C++ Build Tools、NSIS `makensis.exe` 和 Docker（运行 OpenSSH 集成夹具时）。NSIS 可使用标准安装目录或已有 Tauri 缓存中的 `makensis.exe`，构建不依赖 `tauri-cli`。
 
 ## 开发命令
 

@@ -118,6 +118,10 @@ pnpm verify
 
 Rust gates:
 
+`rust-toolchain.toml` pins Rust 1.98.0 with rustfmt and Clippy. Keep local and
+CI validation on that same toolchain; do not silently substitute a floating
+stable version for release checks.
+
 ```text
 cargo fmt --all -- --check
 cargo test --workspace --all-features

@@ -772,7 +772,9 @@ fn hex_decode(value: &str) -> Result<Vec<u8>, LifecycleError> {
     }
     value
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| match (nibble(pair[0]), nibble(pair[1])) {
             (Some(high), Some(low)) => Ok((high << 4) | low),
             _ => Err(LifecycleError::InvalidRuntimeDescriptor(

@@ -2195,7 +2195,7 @@ mod tests {
             lease
         };
         let barrier = Arc::new(Barrier::new(3));
-        let writes = [b'a', b'b']
+        let writes = (*b"ab")
             .into_iter()
             .map(|byte| {
                 let input = Arc::clone(&input);
