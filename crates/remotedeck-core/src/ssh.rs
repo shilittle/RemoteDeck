@@ -11,7 +11,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD_NO_PAD};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     ffi::OsString,
     fs::{self, File, OpenOptions},
     io::{self, Read as _, Write as _},
@@ -39,6 +39,9 @@ const OUTPUT_TRUNCATED_MARKER: &str = "\n[RemoteDeck: output truncated at 1 MiB]
 const READER_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_KNOWN_HOSTS_BYTES: usize = 8 * 1024 * 1024;
 const MAX_KNOWN_HOST_RECORDS: usize = 4_096;
+const MAX_LOCAL_KNOWN_HOSTS_SOURCES: usize = 16;
+const MAX_LOCAL_KNOWN_HOSTS_ENDPOINTS: usize = 512;
+const LOCAL_KNOWN_HOSTS_LOOKUP_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_BOUNDED_OPENSSH_CHILDREN: usize = 32;
 const OPENSSH_CHILD_SLOT_TIMEOUT: Duration = Duration::from_secs(30);
 static BOUNDED_OPENSSH_CHILD_LIMITER: Semaphore =
@@ -79,6 +82,39 @@ pub struct TrustedHostKey {
     pub algorithm: String,
     pub public_key_base64: String,
     pub sha256_fingerprint: String,
+}
+
+/// The reason RemoteDeck did not copy a local OpenSSH trust record for a host.
+///
+/// These results are intentionally separate from connection failures: a local
+/// `known_hosts` file is only a source of already-established trust and is
+/// never queried through the network.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum LocalKnownHostsSeedSkipReason {
+    ExistingAppTrust,
+    NoUsableSource,
+    NoLocalMatch,
+    RevokedLocalRecord,
+    UnsupportedLocalRecord,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalKnownHostsSeedHostResult {
+    pub host_id: String,
+    pub host_alias: String,
+    pub host_token: String,
+    pub imported_records: usize,
+    pub skipped_reason: Option<LocalKnownHostsSeedSkipReason>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalKnownHostsSeedResult {
+    pub hosts: Vec<LocalKnownHostsSeedHostResult>,
+    pub source_warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -281,6 +317,191 @@ impl SshRuntime {
                 .then_with(|| left.algorithm.cmp(&right.algorithm))
         });
         Ok(trusted)
+    }
+
+    /// Copies already-established, endpoint-specific local OpenSSH trust into
+    /// RemoteDeck's dedicated `known_hosts` file.
+    ///
+    /// The supplied source files are read only. `ssh-keygen -F` performs the
+    /// lookup for hashed records, while a bounded local pass preserves matching
+    /// marker semantics. This never performs a network scan, never changes the
+    /// source files, and never replaces an existing RemoteDeck pin for the
+    /// endpoint.
+    pub async fn seed_trusted_keys_from_local_known_hosts(
+        &self,
+        hosts: &[HostProfile],
+        source_paths: &[PathBuf],
+    ) -> AppResult<LocalKnownHostsSeedResult> {
+        if hosts.is_empty() {
+            return Ok(LocalKnownHostsSeedResult::default());
+        }
+        if source_paths.len() > MAX_LOCAL_KNOWN_HOSTS_SOURCES {
+            return Err(AppError::Validation(format!(
+                "at most {MAX_LOCAL_KNOWN_HOSTS_SOURCES} local known_hosts sources may be used"
+            )));
+        }
+
+        let (sources, source_warnings) = usable_local_known_hosts_sources(source_paths);
+        let source_is_unusable = !source_warnings.is_empty();
+        let initially_trusted = {
+            let _guard = self.known_hosts_lock.lock().await;
+            parse_trusted_keys(&read_known_hosts(&self.known_hosts_path)?)?
+        };
+
+        let mut endpoint_order = Vec::new();
+        let mut endpoint_outcomes = HashMap::new();
+        for host in hosts {
+            let token = known_hosts_host_token(&host.hostname, host.port);
+            validate_host_token(&token)?;
+            if endpoint_outcomes.contains_key(&token) {
+                continue;
+            }
+            if endpoint_order.len() >= MAX_LOCAL_KNOWN_HOSTS_ENDPOINTS {
+                return Err(AppError::Validation(format!(
+                    "at most {MAX_LOCAL_KNOWN_HOSTS_ENDPOINTS} local known_hosts endpoints may be seeded at once"
+                )));
+            }
+            endpoint_order.push(token.clone());
+            let outcome = if initially_trusted
+                .iter()
+                .any(|record| record.host_token == token)
+            {
+                EndpointSeedOutcome::skipped(LocalKnownHostsSeedSkipReason::ExistingAppTrust)
+            } else if sources.is_empty() || source_is_unusable {
+                let warnings = source_is_unusable.then(|| {
+                    format!(
+                        "RemoteDeck did not import local trust for {token} because at least one selected local known_hosts source could not be used"
+                    )
+                });
+                EndpointSeedOutcome::skipped_with_warnings(
+                    LocalKnownHostsSeedSkipReason::NoUsableSource,
+                    warnings.into_iter().collect(),
+                )
+            } else {
+                EndpointSeedOutcome::pending()
+            };
+            endpoint_outcomes.insert(token, outcome);
+        }
+
+        let has_pending = endpoint_outcomes
+            .values()
+            .any(EndpointSeedOutcome::is_pending);
+        let keygen = if has_pending {
+            Some(self.keygen()?.to_path_buf())
+        } else {
+            None
+        };
+
+        for token in &endpoint_order {
+            let Some(outcome) = endpoint_outcomes.get(token) else {
+                continue;
+            };
+            if !outcome.is_pending() {
+                continue;
+            }
+            let lookup = lookup_local_known_hosts_records(
+                keygen.as_deref().expect("pending lookup needs ssh-keygen"),
+                &sources,
+                token,
+            )
+            .await;
+            let outcome = match lookup {
+                LocalKnownHostsLookup::Records(records, warnings) if records.is_empty() => {
+                    EndpointSeedOutcome::skipped_with_warnings(
+                        LocalKnownHostsSeedSkipReason::NoLocalMatch,
+                        warnings,
+                    )
+                }
+                LocalKnownHostsLookup::Records(records, warnings) => {
+                    self.commit_local_known_hosts_records(token, &records, warnings)
+                        .await?
+                }
+                LocalKnownHostsLookup::Revoked(warning) => {
+                    EndpointSeedOutcome::skipped_with_warnings(
+                        LocalKnownHostsSeedSkipReason::RevokedLocalRecord,
+                        vec![warning],
+                    )
+                }
+                LocalKnownHostsLookup::Unsupported(warning) => {
+                    EndpointSeedOutcome::skipped_with_warnings(
+                        LocalKnownHostsSeedSkipReason::UnsupportedLocalRecord,
+                        vec![warning],
+                    )
+                }
+                LocalKnownHostsLookup::Unavailable(warning) => {
+                    EndpointSeedOutcome::skipped_with_warnings(
+                        LocalKnownHostsSeedSkipReason::NoUsableSource,
+                        vec![warning],
+                    )
+                }
+            };
+            endpoint_outcomes.insert(token.clone(), outcome);
+        }
+
+        let hosts = hosts
+            .iter()
+            .map(|host| {
+                let host_token = known_hosts_host_token(&host.hostname, host.port);
+                let outcome = endpoint_outcomes
+                    .get(&host_token)
+                    .expect("every requested endpoint has a seed outcome");
+                LocalKnownHostsSeedHostResult {
+                    host_id: host.id.clone(),
+                    host_alias: host.alias.clone(),
+                    host_token,
+                    imported_records: outcome.imported_records,
+                    skipped_reason: outcome.skipped_reason,
+                    warnings: outcome.warnings.clone(),
+                }
+            })
+            .collect();
+        Ok(LocalKnownHostsSeedResult {
+            hosts,
+            source_warnings,
+        })
+    }
+
+    async fn commit_local_known_hosts_records(
+        &self,
+        token: &str,
+        records: &[TrustedHostKey],
+        warnings: Vec<String>,
+    ) -> AppResult<EndpointSeedOutcome> {
+        let _guard = self.known_hosts_lock.lock().await;
+        let existing = read_known_hosts(&self.known_hosts_path)?;
+        let trusted = parse_trusted_keys(&existing)?;
+        if trusted.iter().any(|record| record.host_token == token) {
+            return Ok(EndpointSeedOutcome::skipped_with_warnings(
+                LocalKnownHostsSeedSkipReason::ExistingAppTrust,
+                warnings,
+            ));
+        }
+        if trusted.len().saturating_add(records.len()) > MAX_KNOWN_HOST_RECORDS {
+            return Err(AppError::State(format!(
+                "app-owned known_hosts exceeds {MAX_KNOWN_HOST_RECORDS} records"
+            )));
+        }
+
+        let mut updated = existing;
+        if !updated.is_empty() && !updated.ends_with('\n') {
+            updated.push('\n');
+        }
+        for record in records {
+            validate_host_key_fields(&record.algorithm, &record.public_key_base64)?;
+            updated.push_str(token);
+            updated.push(' ');
+            updated.push_str(&record.algorithm);
+            updated.push(' ');
+            updated.push_str(&record.public_key_base64);
+            updated.push('\n');
+        }
+        atomic_write_text(&self.known_hosts_path, &updated)?;
+        Ok(EndpointSeedOutcome {
+            pending: false,
+            imported_records: records.len(),
+            skipped_reason: None,
+            warnings,
+        })
     }
 
     pub async fn remove_trusted_key_record(
@@ -602,6 +823,347 @@ impl SshRuntime {
             .as_deref()
             .ok_or_else(|| AppError::MissingExecutable("OpenSSH ssh-keyscan.exe".to_owned()))
     }
+    fn keygen(&self) -> AppResult<&Path> {
+        self.keygen_path
+            .as_deref()
+            .ok_or_else(|| AppError::MissingExecutable("OpenSSH ssh-keygen.exe".to_owned()))
+    }
+}
+
+/// Returns the standard per-user OpenSSH trust location. Keep the path even
+/// when absent: local SSH may create the file after RemoteDeck has started.
+pub fn default_user_known_hosts_path() -> Option<PathBuf> {
+    #[cfg(windows)]
+    let user_home = std::env::var_os("USERPROFILE");
+    #[cfg(not(windows))]
+    let user_home = std::env::var_os("HOME");
+    user_home
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .map(|path| path.join(".ssh").join("known_hosts"))
+}
+
+#[derive(Debug, Clone)]
+struct EndpointSeedOutcome {
+    pending: bool,
+    imported_records: usize,
+    skipped_reason: Option<LocalKnownHostsSeedSkipReason>,
+    warnings: Vec<String>,
+}
+
+impl EndpointSeedOutcome {
+    fn pending() -> Self {
+        Self {
+            pending: true,
+            imported_records: 0,
+            skipped_reason: None,
+            warnings: Vec::new(),
+        }
+    }
+
+    fn skipped(reason: LocalKnownHostsSeedSkipReason) -> Self {
+        Self::skipped_with_warnings(reason, Vec::new())
+    }
+
+    fn skipped_with_warnings(reason: LocalKnownHostsSeedSkipReason, warnings: Vec<String>) -> Self {
+        Self {
+            pending: false,
+            imported_records: 0,
+            skipped_reason: Some(reason),
+            warnings,
+        }
+    }
+
+    fn is_pending(&self) -> bool {
+        self.pending
+    }
+}
+
+enum LocalKnownHostsLookup {
+    Records(Vec<TrustedHostKey>, Vec<String>),
+    Revoked(String),
+    Unsupported(String),
+    Unavailable(String),
+}
+
+fn usable_local_known_hosts_sources(source_paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<String>) {
+    let mut sources = Vec::new();
+    let mut warnings = Vec::new();
+    let mut seen = HashSet::new();
+    for source in source_paths {
+        if !seen.insert(source.clone()) {
+            continue;
+        }
+        match fs::metadata(source) {
+            Ok(metadata) if !metadata.is_file() => warnings.push(format!(
+                "local known_hosts source {} is not a file",
+                source.display()
+            )),
+            Ok(metadata) if metadata.len() > MAX_KNOWN_HOSTS_BYTES as u64 => warnings.push(
+                format!(
+                    "local known_hosts source {} exceeds the {MAX_KNOWN_HOSTS_BYTES}-byte safety limit",
+                    source.display()
+                ),
+            ),
+            Ok(_) => sources.push(source.clone()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => warnings.push(format!(
+                "local known_hosts source {} does not exist",
+                source.display()
+            )),
+            Err(error) => warnings.push(format!(
+                "local known_hosts source {} could not be inspected: {error}",
+                source.display()
+            )),
+        }
+    }
+    (sources, warnings)
+}
+
+async fn lookup_local_known_hosts_records(
+    keygen: &Path,
+    sources: &[PathBuf],
+    token: &str,
+) -> LocalKnownHostsLookup {
+    let mut records = Vec::new();
+    let mut seen_records = HashSet::new();
+    let mut warnings = Vec::new();
+    for source in sources {
+        match lookup_local_known_hosts_source(keygen, source, token).await {
+            Ok(LocalKnownHostsLookup::Records(found, mut source_warnings)) => {
+                warnings.append(&mut source_warnings);
+                for record in found {
+                    let identifier = format!("{}:{}", record.algorithm, record.public_key_base64);
+                    if seen_records.insert(identifier) {
+                        if records.len() >= MAX_KNOWN_HOST_RECORDS {
+                            warnings.push(format!(
+                                "local known_hosts matches for {token} exceed {MAX_KNOWN_HOST_RECORDS} records; no records were imported"
+                            ));
+                            return LocalKnownHostsLookup::Records(Vec::new(), warnings);
+                        }
+                        records.push(record);
+                    }
+                }
+            }
+            Ok(LocalKnownHostsLookup::Revoked(warning)) => {
+                return LocalKnownHostsLookup::Revoked(warning);
+            }
+            Ok(LocalKnownHostsLookup::Unsupported(warning)) => {
+                return LocalKnownHostsLookup::Unsupported(warning);
+            }
+            Ok(LocalKnownHostsLookup::Unavailable(warning)) => {
+                return LocalKnownHostsLookup::Unavailable(warning);
+            }
+            Err(error) => {
+                return LocalKnownHostsLookup::Unavailable(format!(
+                    "could not read local known_hosts source {} for {token}: {error}",
+                    source.display()
+                ));
+            }
+        }
+    }
+    LocalKnownHostsLookup::Records(records, warnings)
+}
+
+async fn lookup_local_known_hosts_source(
+    keygen: &Path,
+    source: &Path,
+    token: &str,
+) -> AppResult<LocalKnownHostsLookup> {
+    if let Some(marker) = local_known_hosts_marker_for_endpoint(source, token)? {
+        return Ok(marker);
+    }
+    let args = vec![
+        OsString::from("-F"),
+        OsString::from(token),
+        OsString::from("-f"),
+        source.as_os_str().to_owned(),
+    ];
+    let output = run_output(keygen, &args, LOCAL_KNOWN_HOSTS_LOOKUP_TIMEOUT).await?;
+    if output.stdout.truncated || output.stderr.truncated {
+        return Err(AppError::Process(format!(
+            "ssh-keygen lookup output for {} exceeded the safety limit",
+            source.display()
+        )));
+    }
+    let stdout = captured_text(&output.stdout);
+    let stderr = captured_text(&output.stderr);
+    if !output.status.success() {
+        if stdout.trim().is_empty() && stderr.trim().is_empty() {
+            return Ok(LocalKnownHostsLookup::Records(Vec::new(), Vec::new()));
+        }
+        return Err(AppError::Process(format!(
+            "ssh-keygen lookup failed for {}: {}",
+            source.display(),
+            nonempty_or(stderr, "no matching local host key")
+        )));
+    }
+    parse_local_known_hosts_lookup(&stdout, token)
+}
+
+fn local_known_hosts_marker_for_endpoint(
+    source: &Path,
+    token: &str,
+) -> AppResult<Option<LocalKnownHostsLookup>> {
+    let content = read_known_hosts(source)?;
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let fields = line.split_whitespace().collect::<Vec<_>>();
+        let Some(marker) = fields.first().filter(|field| field.starts_with('@')) else {
+            continue;
+        };
+        if fields.len() < 4 {
+            return Err(AppError::Process(format!(
+                "local known_hosts source {} contains an incomplete marked record",
+                source.display()
+            )));
+        }
+        if !known_hosts_marker_matches_endpoint(fields[1], token) {
+            continue;
+        }
+        return Ok(Some(match *marker {
+            "@revoked" => LocalKnownHostsLookup::Revoked(format!(
+                "local known_hosts marks {token} as @revoked; RemoteDeck did not import trust"
+            )),
+            "@cert-authority" => LocalKnownHostsLookup::Unsupported(format!(
+                "local known_hosts uses @cert-authority for {token}; RemoteDeck did not import unsupported certificate-authority trust"
+            )),
+            marker => LocalKnownHostsLookup::Unsupported(format!(
+                "local known_hosts uses unsupported marker {marker} for {token}; RemoteDeck did not import trust"
+            )),
+        }));
+    }
+    Ok(None)
+}
+
+fn parse_local_known_hosts_lookup(output: &str, token: &str) -> AppResult<LocalKnownHostsLookup> {
+    let mut records = Vec::new();
+    let mut warnings = Vec::new();
+    for raw_line in output.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let fields = line.split_whitespace().collect::<Vec<_>>();
+        let (marker, hosts, algorithm, public_key_base64) =
+            if fields.first().is_some_and(|field| field.starts_with('@')) {
+                if fields.len() < 4 {
+                    return Err(AppError::Process(
+                        "ssh-keygen returned an incomplete marked known_hosts record".to_owned(),
+                    ));
+                }
+                (Some(fields[0]), fields[1], fields[2], fields[3])
+            } else {
+                if fields.len() < 3 {
+                    return Err(AppError::Process(
+                        "ssh-keygen returned an incomplete known_hosts record".to_owned(),
+                    ));
+                }
+                (None, fields[0], fields[1], fields[2])
+            };
+        match marker {
+            Some("@revoked") => {
+                return Ok(LocalKnownHostsLookup::Revoked(format!(
+                    "local known_hosts marks {token} as @revoked; RemoteDeck did not import trust"
+                )));
+            }
+            Some("@cert-authority") => {
+                return Ok(LocalKnownHostsLookup::Unsupported(format!(
+                    "local known_hosts uses @cert-authority for {token}; RemoteDeck did not import unsupported certificate-authority trust"
+                )));
+            }
+            Some(marker) => {
+                return Ok(LocalKnownHostsLookup::Unsupported(format!(
+                    "local known_hosts uses unsupported marker {marker} for {token}; RemoteDeck did not import trust"
+                )));
+            }
+            None => {}
+        }
+        if !source_hosts_match_exact_endpoint(hosts, token) {
+            warnings.push(format!(
+                "ignored a local known_hosts record for {token} because it is not an exact endpoint record"
+            ));
+            continue;
+        }
+        validate_host_key_fields(algorithm, public_key_base64)?;
+        records.push(TrustedHostKey {
+            host_token: token.to_owned(),
+            algorithm: algorithm.to_owned(),
+            public_key_base64: public_key_base64.to_owned(),
+            sha256_fingerprint: fingerprint_public_key(public_key_base64)?,
+        });
+    }
+    Ok(LocalKnownHostsLookup::Records(records, warnings))
+}
+
+fn source_hosts_match_exact_endpoint(hosts: &str, token: &str) -> bool {
+    hosts.split(',').any(|host| {
+        host == token || host.eq_ignore_ascii_case(token) || is_hashed_known_hosts_host_token(host)
+    })
+}
+
+fn known_hosts_marker_matches_endpoint(hosts: &str, token: &str) -> bool {
+    let mut positive_match = false;
+    for raw_pattern in hosts.split(',') {
+        let (negative, pattern) = raw_pattern
+            .strip_prefix('!')
+            .map_or((false, raw_pattern), |pattern| (true, pattern));
+        if is_hashed_known_hosts_host_token(pattern) || !known_hosts_pattern_matches(pattern, token)
+        {
+            continue;
+        }
+        if negative {
+            return false;
+        }
+        positive_match = true;
+    }
+    positive_match
+}
+
+fn known_hosts_pattern_matches(pattern: &str, value: &str) -> bool {
+    let pattern = pattern.as_bytes();
+    let value = value.as_bytes();
+    let mut pattern_index = 0;
+    let mut value_index = 0;
+    let mut wildcard_index = None;
+    let mut wildcard_value_index = 0;
+    while value_index < value.len() {
+        if pattern_index < pattern.len()
+            && (pattern[pattern_index] == b'?'
+                || pattern[pattern_index].eq_ignore_ascii_case(&value[value_index]))
+        {
+            pattern_index += 1;
+            value_index += 1;
+        } else if pattern_index < pattern.len() && pattern[pattern_index] == b'*' {
+            wildcard_index = Some(pattern_index);
+            pattern_index += 1;
+            wildcard_value_index = value_index;
+        } else if let Some(index) = wildcard_index {
+            pattern_index = index + 1;
+            wildcard_value_index += 1;
+            value_index = wildcard_value_index;
+        } else {
+            return false;
+        }
+    }
+    while pattern_index < pattern.len() && pattern[pattern_index] == b'*' {
+        pattern_index += 1;
+    }
+    pattern_index == pattern.len()
+}
+
+fn is_hashed_known_hosts_host_token(host: &str) -> bool {
+    let Some(parts) = host.strip_prefix("|1|") else {
+        return false;
+    };
+    let mut fields = parts.split('|');
+    let salt = fields.next();
+    let digest = fields.next();
+    salt.is_some_and(|value| !value.is_empty())
+        && digest.is_some_and(|value| !value.is_empty())
+        && fields.next().is_none()
 }
 
 fn host_key_scan_failure_message(stderr: String, local_keyscan: bool, is_windows: bool) -> String {
@@ -1895,6 +2457,287 @@ mod tests {
         fs::remove_dir_all(directory).expect("remove temp directory");
     }
 
+    #[tokio::test]
+    async fn local_known_hosts_seed_imports_plain_exact_match_without_touching_source() {
+        let directory = local_known_hosts_seed_directory();
+        let app_known_hosts = directory.join("app-known_hosts");
+        let source = directory.join("local-known_hosts");
+        let key = test_host_key(1);
+        let source_content = format!("example.test ssh-ed25519 {key}\n");
+        fs::write(&app_known_hosts, []).expect("create app known_hosts");
+        fs::write(&source, &source_content).expect("create local known_hosts");
+        let runtime = local_known_hosts_seed_runtime(app_known_hosts.clone());
+
+        let result = runtime
+            .seed_trusted_keys_from_local_known_hosts(
+                &[host_profile()],
+                std::slice::from_ref(&source),
+            )
+            .await
+            .expect("seed local trust");
+
+        assert_eq!(result.source_warnings, Vec::<String>::new());
+        assert_eq!(result.hosts.len(), 1);
+        assert_eq!(result.hosts[0].imported_records, 1);
+        assert_eq!(result.hosts[0].skipped_reason, None);
+        assert_eq!(
+            fs::read_to_string(&source).expect("read source"),
+            source_content
+        );
+        assert_eq!(
+            fs::read_to_string(&app_known_hosts).expect("read app known_hosts"),
+            format!("example.test ssh-ed25519 {key}\n")
+        );
+        fs::remove_dir_all(directory).expect("remove directory");
+    }
+
+    #[tokio::test]
+    async fn local_known_hosts_seed_imports_hashed_nondefault_port_without_touching_source() {
+        let directory = local_known_hosts_seed_directory();
+        let app_known_hosts = directory.join("app-known_hosts");
+        let source = directory.join("local-known_hosts");
+        let key = test_host_key(2);
+        let token = "[example.test]:2207";
+        fs::write(&app_known_hosts, []).expect("create app known_hosts");
+        fs::write(&source, format!("{token} ssh-ed25519 {key}\n"))
+            .expect("create local known_hosts");
+        let runtime = local_known_hosts_seed_runtime(app_known_hosts.clone());
+        let keygen = runtime
+            .keygen_path
+            .as_deref()
+            .expect("system ssh-keygen")
+            .to_path_buf();
+        let hashed = crate::process::command(&keygen)
+            .args(["-H", "-f"])
+            .arg(&source)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .expect("hash local known_hosts");
+        assert!(hashed.success(), "ssh-keygen -H failed: {hashed}");
+        let source_content = fs::read_to_string(&source).expect("read hashed source");
+        assert!(source_content.contains("|1|"), "source was not hashed");
+        let mut host = host_profile();
+        host.port = 2207;
+
+        let result = runtime
+            .seed_trusted_keys_from_local_known_hosts(&[host], std::slice::from_ref(&source))
+            .await
+            .expect("seed hashed local trust");
+
+        assert_eq!(result.hosts[0].host_token, token);
+        assert_eq!(result.hosts[0].imported_records, 1);
+        assert_eq!(result.hosts[0].skipped_reason, None);
+        assert_eq!(
+            fs::read_to_string(&source).expect("read source"),
+            source_content
+        );
+        assert_eq!(
+            fs::read_to_string(&app_known_hosts).expect("read app known_hosts"),
+            format!("{token} ssh-ed25519 {key}\n")
+        );
+        fs::remove_dir_all(directory).expect("remove directory");
+    }
+
+    #[tokio::test]
+    async fn local_known_hosts_seed_keeps_existing_app_pin_even_when_local_key_differs() {
+        let directory = local_known_hosts_seed_directory();
+        let app_known_hosts = directory.join("app-known_hosts");
+        let source = directory.join("local-known_hosts");
+        let app_key = test_host_key(3);
+        let local_key = test_host_key(4);
+        let app_content = format!("example.test ssh-ed25519 {app_key}\n");
+        let source_content = format!("example.test ssh-ed25519 {local_key}\n");
+        fs::write(&app_known_hosts, &app_content).expect("create app known_hosts");
+        fs::write(&source, &source_content).expect("create local known_hosts");
+        let runtime = local_known_hosts_seed_runtime(app_known_hosts.clone());
+
+        let result = runtime
+            .seed_trusted_keys_from_local_known_hosts(
+                &[host_profile()],
+                std::slice::from_ref(&source),
+            )
+            .await
+            .expect("seed local trust");
+
+        assert_eq!(result.hosts[0].imported_records, 0);
+        assert_eq!(
+            result.hosts[0].skipped_reason,
+            Some(LocalKnownHostsSeedSkipReason::ExistingAppTrust)
+        );
+        assert_eq!(
+            fs::read_to_string(&source).expect("read source"),
+            source_content
+        );
+        assert_eq!(
+            fs::read_to_string(&app_known_hosts).expect("read app known_hosts"),
+            app_content
+        );
+        fs::remove_dir_all(directory).expect("remove directory");
+    }
+
+    #[tokio::test]
+    async fn local_known_hosts_seed_rejects_marked_records_before_exact_filtering() {
+        for (marker, hosts, expected_reason) in [
+            (
+                "@revoked",
+                "*.example.test",
+                LocalKnownHostsSeedSkipReason::RevokedLocalRecord,
+            ),
+            (
+                "@cert-authority",
+                "*.example.test",
+                LocalKnownHostsSeedSkipReason::UnsupportedLocalRecord,
+            ),
+        ] {
+            let directory = local_known_hosts_seed_directory();
+            let app_known_hosts = directory.join("app-known_hosts");
+            let source = directory.join("local-known_hosts");
+            let key = test_host_key(5);
+            let source_content =
+                format!("lab.example.test ssh-ed25519 {key}\n{marker} {hosts} ssh-ed25519 {key}\n");
+            fs::write(&app_known_hosts, []).expect("create app known_hosts");
+            fs::write(&source, &source_content).expect("create local known_hosts");
+            let runtime = local_known_hosts_seed_runtime(app_known_hosts.clone());
+            let mut host = host_profile();
+            host.hostname = "lab.example.test".to_owned();
+
+            let result = runtime
+                .seed_trusted_keys_from_local_known_hosts(&[host], std::slice::from_ref(&source))
+                .await
+                .expect("evaluate marked local trust");
+
+            assert_eq!(result.hosts[0].imported_records, 0);
+            assert_eq!(result.hosts[0].skipped_reason, Some(expected_reason));
+            assert!(!result.hosts[0].warnings.is_empty());
+            assert_eq!(
+                fs::read_to_string(&source).expect("read source"),
+                source_content
+            );
+            assert_eq!(
+                fs::read_to_string(&app_known_hosts).expect("read app known_hosts"),
+                ""
+            );
+            fs::remove_dir_all(directory).expect("remove directory");
+        }
+    }
+
+    #[tokio::test]
+    async fn local_known_hosts_seed_reports_no_match_without_touching_either_file() {
+        let directory = local_known_hosts_seed_directory();
+        let app_known_hosts = directory.join("app-known_hosts");
+        let source = directory.join("local-known_hosts");
+        let key = test_host_key(6);
+        let source_content = format!("unrelated.example ssh-ed25519 {key}\n");
+        fs::write(&app_known_hosts, []).expect("create app known_hosts");
+        fs::write(&source, &source_content).expect("create local known_hosts");
+        let runtime = local_known_hosts_seed_runtime(app_known_hosts.clone());
+
+        let result = runtime
+            .seed_trusted_keys_from_local_known_hosts(
+                &[host_profile()],
+                std::slice::from_ref(&source),
+            )
+            .await
+            .expect("evaluate local trust");
+
+        assert_eq!(result.hosts[0].imported_records, 0);
+        assert_eq!(
+            result.hosts[0].skipped_reason,
+            Some(LocalKnownHostsSeedSkipReason::NoLocalMatch)
+        );
+        assert_eq!(
+            fs::read_to_string(&source).expect("read source"),
+            source_content
+        );
+        assert_eq!(
+            fs::read_to_string(&app_known_hosts).expect("read app known_hosts"),
+            ""
+        );
+        fs::remove_dir_all(directory).expect("remove directory");
+    }
+
+    #[tokio::test]
+    async fn local_known_hosts_seed_fails_closed_when_any_selected_source_is_invalid() {
+        let directory = local_known_hosts_seed_directory();
+        let app_known_hosts = directory.join("app-known_hosts");
+        let source = directory.join("local-known_hosts");
+        let invalid_source = directory.join("not-a-known-hosts-file");
+        let key = test_host_key(7);
+        let source_content = format!("example.test ssh-ed25519 {key}\n");
+        fs::write(&app_known_hosts, []).expect("create app known_hosts");
+        fs::write(&source, &source_content).expect("create local known_hosts");
+        fs::create_dir(&invalid_source).expect("create invalid source directory");
+        let runtime = local_known_hosts_seed_runtime(app_known_hosts.clone());
+
+        let result = runtime
+            .seed_trusted_keys_from_local_known_hosts(
+                &[host_profile()],
+                &[source.clone(), invalid_source],
+            )
+            .await
+            .expect("evaluate local trust sources");
+
+        assert!(!result.source_warnings.is_empty());
+        assert_eq!(result.hosts[0].imported_records, 0);
+        assert_eq!(
+            result.hosts[0].skipped_reason,
+            Some(LocalKnownHostsSeedSkipReason::NoUsableSource)
+        );
+        assert!(!result.hosts[0].warnings.is_empty());
+        assert_eq!(
+            fs::read_to_string(&source).expect("read source"),
+            source_content
+        );
+        assert_eq!(
+            fs::read_to_string(&app_known_hosts).expect("read app known_hosts"),
+            ""
+        );
+        fs::remove_dir_all(directory).expect("remove directory");
+    }
+
+    #[tokio::test]
+    async fn local_known_hosts_seed_deduplicates_identical_endpoints_in_one_batch() {
+        let directory = local_known_hosts_seed_directory();
+        let app_known_hosts = directory.join("app-known_hosts");
+        let source = directory.join("local-known_hosts");
+        let key = test_host_key(8);
+        let source_content = format!("example.test ssh-ed25519 {key}\n");
+        fs::write(&app_known_hosts, []).expect("create app known_hosts");
+        fs::write(&source, &source_content).expect("create local known_hosts");
+        let runtime = local_known_hosts_seed_runtime(app_known_hosts.clone());
+        let first = host_profile();
+        let mut second = first.clone();
+        second.id = Uuid::new_v4().to_string();
+        second.alias = "same-endpoint".to_owned();
+
+        let result = runtime
+            .seed_trusted_keys_from_local_known_hosts(
+                &[first, second],
+                std::slice::from_ref(&source),
+            )
+            .await
+            .expect("seed duplicate endpoints");
+
+        assert_eq!(result.hosts.len(), 2);
+        assert!(
+            result
+                .hosts
+                .iter()
+                .all(|host| host.imported_records == 1 && host.skipped_reason.is_none())
+        );
+        assert_eq!(
+            fs::read_to_string(&app_known_hosts).expect("read app known_hosts"),
+            format!("example.test ssh-ed25519 {key}\n")
+        );
+        assert_eq!(
+            fs::read_to_string(&source).expect("read source"),
+            source_content
+        );
+        fs::remove_dir_all(directory).expect("remove directory");
+    }
+
     #[test]
     fn bounded_capture_drains_but_keeps_only_one_mebibyte() {
         let mut capture = BoundedCapture::default();
@@ -1967,5 +2810,33 @@ mod tests {
             created_at: now,
             updated_at: now,
         }
+    }
+
+    fn local_known_hosts_seed_directory() -> PathBuf {
+        let directory =
+            std::env::temp_dir().join(format!("remotedeck-local-known-hosts-{}", Uuid::new_v4()));
+        fs::create_dir_all(&directory).expect("create directory");
+        directory
+    }
+
+    fn local_known_hosts_seed_runtime(known_hosts_path: PathBuf) -> SshRuntime {
+        SshRuntime {
+            ssh_path: None,
+            sftp_path: None,
+            keyscan_path: None,
+            keygen_path: find_executable(&["ssh-keygen.exe", "ssh-keygen"]),
+            known_hosts_path,
+            known_hosts_lock: Arc::new(Mutex::new(())),
+            repository: None,
+        }
+    }
+
+    fn test_host_key(byte: u8) -> String {
+        let mut encoded = Vec::with_capacity(51);
+        encoded.extend_from_slice(&(11_u32.to_be_bytes()));
+        encoded.extend_from_slice(b"ssh-ed25519");
+        encoded.extend_from_slice(&(32_u32.to_be_bytes()));
+        encoded.extend(std::iter::repeat_n(byte, 32));
+        base64::engine::general_purpose::STANDARD.encode(encoded)
     }
 }

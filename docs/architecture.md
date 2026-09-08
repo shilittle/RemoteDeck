@@ -30,6 +30,8 @@ Each terminal session is a real Windows OpenSSH child attached to ConPTY. Output
 
 All SSH, SFTP, tunnel, telemetry and background command paths resolve the current saved host profile, validate every OpenSSH argument, use the app-owned `known_hosts`, and enable strict host-key checking. Interactive credentials stay in a PTY. The browser never receives a private key or password and cannot ask the server to execute an arbitrary local process.
 
+Before autostart, and after saving or importing profiles, the server asks the core to reuse matching trust from the current user's `.ssh/known_hosts`. Only previously unpinned endpoints are seeded; an existing app pin is never replaced or supplemented automatically. The global source remains read-only, lookups and startup preparation are bounded, and failures are reported through bootstrap warnings. Already imported profiles are included, so an upgrade does not require reimporting or repeating fingerprint confirmation.
+
 The service accepts only loopback requests with the expected Host and Origin. The bootstrap ticket is exchanged once for an HttpOnly, SameSite session cookie; state-changing routes also require the session CSRF token. WebSocket handshakes require the current session and terminal ticket. Diagnostics redact credentials, terminal data, remote output and likely secrets.
 
 ## Lifetime and packaging

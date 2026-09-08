@@ -9,9 +9,9 @@ User data lives at `%APPDATA%\io.github.shilittle.remotedeck`. Uninstall removes
 ## First connection
 
 1. In **Hosts**, add an alias, address, port, user and default workspace, or import explicit hosts from an OpenSSH config.
-2. Choose **Scan fingerprint** and verify the displayed SHA-256 through the server console, an administrator or another independent trusted channel.
-3. Accept only an exact match. A changed host key is refused; after confirming a legitimate rotation, remove the old trust, scan again and verify the replacement.
-4. Open **Workspace → Terminal** and enter passwords, keyboard-interactive answers or key passphrases in the real SSH/ConPTY session. RemoteDeck does not store them.
+2. Hosts already trusted by local SSH reuse the matching address/port record from the current user's `.ssh/known_hosts`. Open **Workspace → Terminal** directly; no repeated scan is needed. Startup also prepares profiles imported by older versions.
+3. Only when no existing trust is available, choose **Scan fingerprint** and verify the SHA-256 through an independent trusted channel before accepting it. Changed keys remain blocked until you verify the rotation and replace the old pin explicitly.
+4. Enter passwords, keyboard-interactive answers or key passphrases in the real SSH/ConPTY session. RemoteDeck does not store them. An existing usable private key does not need regeneration or redeployment.
 
 Background SFTP, tunnels, monitoring, commands and Agent probes require a usable private key or ssh-agent. For a password-only host, authenticate in the terminal and deploy a public key first.
 
@@ -26,9 +26,9 @@ The Workspace always shows the selected host and opens on Terminal by default. R
 
 ## Hosts, ProxyJump and keys
 
-Hosts can be searched, grouped and imported. ProxyJump selects one saved direct-connect host. Trust the jump first, then scan and independently verify the target through it. Nested chains, arbitrary ProxyCommand values, wildcard hosts and recursive Include files are not imported.
+Hosts can be searched, grouped and imported. ProxyJump selects one saved direct-connect host. Both endpoints reuse existing local trust; if absent, trust the jump first, then scan and independently verify the target through it. Nested chains, arbitrary ProxyCommand values, wildcard hosts and recursive Include files are not imported.
 
-The key view discovers local private keys, generates Ed25519 keys and deploys public keys only after user confirmation to a trusted host. RemoteDeck always uses its own `known_hosts` and never edits the global OpenSSH files.
+The key view discovers local private keys, generates Ed25519 keys and deploys public keys only after user confirmation to a trusted host. RemoteDeck always uses its own `known_hosts` and never edits the global OpenSSH files. Reuse supports exact addresses, non-default ports and hashed records, and never overwrites any existing app pin. Custom `UserKnownHostsFile`, `HostKeyAlias` and certificate trust are outside automatic reuse and need separate review.
 
 ## Tasks, settings and lifetime
 

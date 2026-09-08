@@ -16,7 +16,9 @@ use uuid::Uuid;
 async fn setup() -> (tempfile::TempDir, Server, String, String) {
     let dir = tempfile::tempdir().unwrap();
     let hub = EventHub::default();
-    let context = AppContext::open(dir.path().to_path_buf(), hub.clone()).unwrap();
+    let context =
+        AppContext::open_with_local_trust_paths(dir.path().to_path_buf(), hub.clone(), vec![])
+            .unwrap();
     let auth = Auth::new(43127, random_token(), None);
     let launch = auth.launch_url().unwrap();
     let server = Server::new(context, auth, hub);
@@ -50,6 +52,122 @@ async fn decode(response: Response) -> Value {
         .await
         .unwrap();
     serde_json::from_slice(&bytes).unwrap()
+}
+
+const LOCAL_TRUST_TEST_KEY: &str =
+    "AAAAC3NzaC1lZDI1NTE5AAAAIAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH";
+
+#[tokio::test]
+async fn saved_imported_and_existing_profiles_reuse_local_trust_without_acceptance() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("local_known_hosts");
+    let contents = format!(
+        "[192.0.2.91]:2222 ssh-ed25519 {LOCAL_TRUST_TEST_KEY}\n192.0.2.92 ssh-ed25519 {LOCAL_TRUST_TEST_KEY}\n"
+    );
+    std::fs::write(&source, &contents).unwrap();
+    let context = AppContext::open_with_local_trust_paths(
+        directory.path().join("app"),
+        EventHub::default(),
+        vec![source.clone()],
+    )
+    .unwrap();
+    crate::api::dispatch(
+        context.clone(),
+        "save_host",
+        json!({"draft": {
+            "alias":"saved-local", "hostname":"192.0.2.91", "port":2222,
+            "username":"tester", "monitorEnabled":false
+        }}),
+    )
+    .await
+    .unwrap();
+    let keys = context.state.ssh.list_trusted_keys().await.unwrap();
+    assert_eq!(keys.len(), 1);
+    assert_eq!(keys[0].host_token, "[192.0.2.91]:2222");
+
+    let config = directory.path().join("config");
+    std::fs::write(
+        &config,
+        "Host imported-local\n HostName 192.0.2.92\n User tester\n",
+    )
+    .unwrap();
+    let imported = crate::api::dispatch(
+        context.clone(),
+        "import_ssh_config",
+        json!({"configPath":config}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(imported["imported"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        context.state.ssh.list_trusted_keys().await.unwrap().len(),
+        2
+    );
+
+    // Simulate an older installation that saved profiles but isolated all local trust.
+    std::fs::write(context.state.repository.known_hosts_path(), "").unwrap();
+    context.initialize_local_trust().await;
+    assert_eq!(
+        context.state.ssh.list_trusted_keys().await.unwrap().len(),
+        2
+    );
+    std::fs::write(context.state.repository.known_hosts_path(), "").unwrap();
+    let imported = crate::api::dispatch(
+        context.clone(),
+        "import_ssh_config",
+        json!({"configPath":config}),
+    )
+    .await
+    .unwrap();
+    assert!(imported["imported"].as_array().unwrap().is_empty());
+    assert_eq!(
+        context.state.ssh.list_trusted_keys().await.unwrap().len(),
+        2
+    );
+    assert_eq!(std::fs::read_to_string(&source).unwrap(), contents);
+    let bootstrap = crate::api::dispatch(context.clone(), "bootstrap", json!({}))
+        .await
+        .unwrap();
+    assert_eq!(bootstrap["sshTrustWarnings"], json!([]));
+    context.shutdown().await;
+}
+
+#[tokio::test]
+async fn local_trust_preparation_failure_is_visible_without_failing_profile_save() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("local_known_hosts");
+    std::fs::create_dir(&source).unwrap();
+    let context = AppContext::open_with_local_trust_paths(
+        directory.path().join("app"),
+        EventHub::default(),
+        vec![source],
+    )
+    .unwrap();
+    let saved = crate::api::dispatch(
+        context.clone(),
+        "save_host",
+        json!({"draft": {
+            "alias":"no-trust", "hostname":"192.0.2.93", "port":22,
+            "username":"tester", "monitorEnabled":false
+        }}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved["alias"], "no-trust");
+    assert!(
+        context
+            .state
+            .ssh
+            .list_trusted_keys()
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let bootstrap = crate::api::dispatch(context.clone(), "bootstrap", json!({}))
+        .await
+        .unwrap();
+    assert!(!bootstrap["sshTrustWarnings"].as_array().unwrap().is_empty());
+    context.shutdown().await;
 }
 fn post(
     server: &Server,
@@ -174,8 +292,23 @@ async fn simultaneous_identical_creates_commit_once_and_bootstrap_has_monotonic_
     let (first, second) = tokio::join!(first, second);
     let first = first.unwrap();
     let second = second.unwrap();
-    assert_eq!(first.status(), StatusCode::OK);
-    assert_eq!(decode(first).await, decode(second).await);
+    assert_eq!(first.status(), StatusCode::ACCEPTED);
+    let accepted = decode(first).await;
+    assert_eq!(accepted, decode(second).await);
+    let operation_id = accepted["operationId"].as_str().unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let operation = server.operations.get(operation_id).unwrap();
+            if operation["state"] == "completed" {
+                break;
+            }
+            assert_ne!(operation["state"], "failed", "{operation}");
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(server.operations.list().len(), 1);
     let snapshot = app
         .clone()
         .oneshot(post(

@@ -11,11 +11,11 @@ RemoteDeck 是一个面向 Windows 10/11 x64 的本机 SSH 工作台。程序以
 - **任务**：查看跨主机的传输、命令、监控和隧道任务，取消、重试并返回对应工作区。
 - **设置**：调整终端和运行偏好、登录后启动、迁移、诊断和停止服务。
 
-首次连接的顺序是“保存主机 → 扫描并独立核对指纹 → 在终端内完成认证 → 使用后台功能”。密码和私钥口令只进入交互式 PTY，不进入 HTTP 请求、配置、日志或诊断包。
+已有本机 SSH 配置时，导入主机后即可打开终端；RemoteDeck 会复用当前用户 `.ssh/known_hosts` 中已确认的对应地址和端口，不要求重复扫描。仅在没有既有信任时，才需要扫描并独立核对指纹。密码和私钥口令只进入交互式 PTY，不进入 HTTP 请求、配置、日志或诊断包。
 
 ## 安装和运行要求
 
-[下载最新 Windows 安装包](https://github.com/shilittle/RemoteDeck/releases/latest) · [v2.1.0 更新说明](docs/releases/v2.1.0.md)。升级前请先退出旧版本；后台操作不会弹出额外的命令行窗口。
+[下载最新 Windows 安装包](https://github.com/shilittle/RemoteDeck/releases/latest) · [v2.1.1 更新说明](docs/releases/v2.1.1.md)。升级前请先退出旧版本；后台操作不会弹出额外的命令行窗口。
 
 终端用户需要 Windows 10/11 x64、Windows OpenSSH Client，以及可通过 OpenSSH 访问的 Linux SSH Server。安装包是当前用户范围的 NSIS；用户数据放在 `%APPDATA%\io.github.shilittle.remotedeck`，卸载保留这些数据。安装包不捆绑 Node.js、浏览器运行时或远端依赖。
 
@@ -46,7 +46,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings -A linker-m
 
 服务器只监听 IPv4 loopback。启动时创建短期一次性浏览器票据，交换为 HttpOnly、SameSite 会话；受保护路由校验 Host、Origin、CSRF 和 WebSocket 票据。浏览器只使用显式 `/api/v1` 路由、SSE 事件流和终端 WebSocket，不拥有通用 shell、文件系统或代理能力。
 
-RemoteDeck 使用应用专属 `known_hosts`，从不修改用户全局 OpenSSH 信任文件。首次或变化的主机密钥必须显示指纹、由用户明确接受并在写入前重新扫描；每条 SSH/SFTP/隧道/后台命令连接都启用严格主机密钥检查。服务只停止当前实例登记的子进程，终端输出和输入不写入日志。
+RemoteDeck 使用应用专属 `known_hosts`，从不修改用户全局 OpenSSH 信任文件。启动、保存和导入主机时，会为尚无应用信任的地址和端口复制本机已有的普通或哈希信任记录；已保存的应用记录不会被覆盖。没有既有信任或密钥发生变化时，仍须明确核验；每条 SSH/SFTP/隧道/后台命令连接都启用严格主机密钥检查。服务只停止当前实例登记的子进程，终端输出和输入不写入日志。
 
 ## 发布状态
 

@@ -20,6 +20,8 @@ use tokio::sync::{Semaphore, watch};
 use uuid::Uuid;
 
 pub(crate) const LONG_OPERATIONS: &[&str] = &[
+    "save_host",
+    "import_ssh_config",
     "scan_host_keys",
     "accept_host_key",
     "list_host_keys",

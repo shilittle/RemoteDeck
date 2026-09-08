@@ -15,6 +15,7 @@ import {
   Upload
 } from 'lucide-react'
 import { api, errorMessage } from '../api'
+import { classifyConnectionFailure, connectionFailureHint, hasTrustedEndpoint } from '../host-trust'
 import { retainOrSelectKeyPath } from '../key-selection'
 import { useAppStore } from '../store'
 import type {
@@ -72,7 +73,9 @@ export function HostPanel(): React.JSX.Element {
   const saveHost = useAppStore((state) => state.saveHost)
   const deleteHost = useAppStore((state) => state.deleteHost)
   const importSshConfig = useAppStore((state) => state.importSshConfig)
+  const sshTrustWarnings = useAppStore((state) => state.sshTrustWarnings)
   const busy = useAppStore((state) => state.busy)
+  const configRevision = useAppStore((state) => state.configRevision)
   const selected = useMemo(() => hosts.find((host) => host.id === selectedHostId) ?? null, [hosts, selectedHostId])
   const [draft, setDraft] = useState<HostDraft>(() => draftFromHost(selected))
   const [message, setMessage] = useState('')
@@ -80,12 +83,16 @@ export function HostPanel(): React.JSX.Element {
   const [testedAt, setTestedAt] = useState<string | null>(null)
   const [candidates, setCandidates] = useState<HostKeyCandidate[]>([])
   const [trustedKeys, setTrustedKeys] = useState<HostKeyRecord[]>([])
+  const [trustedKeysState, setTrustedKeysState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [trustedKeysError, setTrustedKeysError] = useState<string | null>(null)
   const [privateKeys, setPrivateKeys] = useState<PrivateKeyRecord[]>([])
   const [actionBusy, setActionBusy] = useState(false)
   const [importPath, setImportPath] = useState('')
   const [keyPath, setKeyPath] = useState('')
   const [keyComment, setKeyComment] = useState('RemoteDeck')
   const keyInventoryRevision = useRef(0)
+  const trustedKeysRevision = useRef(0)
+  const draftConnectionRef = useRef({ hostId: draft.id ?? null, signature: '', revision: 0 })
   const directJumpHosts = useMemo(
     () => hosts.filter((host) => host.id !== draft.id && !host.proxyJump),
     [draft.id, hosts],
@@ -97,15 +104,69 @@ export function HostPanel(): React.JSX.Element {
     draft.proxyJump && !hosts.some((host) => host.id === draft.proxyJump),
   )
   const selectedJump = hosts.find((host) => host.id === draft.proxyJump)
+  const draftConnectionSignature = JSON.stringify([
+    draft.id ?? null,
+    draft.hostname,
+    draft.port,
+    draft.username,
+    draft.authMethod ?? null,
+    draft.identityFile ?? null,
+    draft.proxyJump ?? null,
+    draft.advanced?.connectTimeoutSeconds ?? 15,
+    draft.advanced?.serverAliveIntervalSeconds ?? 30,
+    draft.advanced?.serverAliveCountMax ?? 3,
+    draft.advanced?.tcpKeepAlive ?? true,
+    draft.advanced?.compression ?? false,
+    draft.advanced?.identitiesOnly ?? false,
+  ])
+  if (draftConnectionRef.current.signature !== draftConnectionSignature) {
+    draftConnectionRef.current = {
+      hostId: draft.id ?? null,
+      signature: draftConnectionSignature,
+      revision: draftConnectionRef.current.revision + 1,
+    }
+  }
+
+  const savedConnectionMatchesDraft = Boolean(
+    selected &&
+    draft.id === selected.id &&
+    draft.hostname === selected.hostname &&
+    draft.port === selected.port &&
+    draft.username === selected.username &&
+    (draft.authMethod ?? (draft.identityFile ? 'private_key' : 'agent')) === (selected.authMethod ?? (selected.identityFile ? 'private_key' : 'agent')) &&
+    (draft.identityFile ?? '') === (selected.identityFile ?? '') &&
+    (draft.proxyJump ?? '') === (selected.proxyJump ?? '') &&
+    (draft.advanced?.connectTimeoutSeconds ?? 15) === selected.advanced.connectTimeoutSeconds &&
+    (draft.advanced?.serverAliveIntervalSeconds ?? 30) === selected.advanced.serverAliveIntervalSeconds &&
+    (draft.advanced?.serverAliveCountMax ?? 3) === selected.advanced.serverAliveCountMax &&
+    (draft.advanced?.tcpKeepAlive ?? true) === selected.advanced.tcpKeepAlive &&
+    (draft.advanced?.compression ?? false) === selected.advanced.compression &&
+    (draft.advanced?.identitiesOnly ?? false) === selected.advanced.identitiesOnly,
+  )
+  const endpointTrusted = savedConnectionMatchesDraft && trustedKeysState === 'ready' && hasTrustedEndpoint(draft, trustedKeys)
+  const connectionFailureKind = classifyConnectionFailure(testResult?.error ?? null)
+  const connectionHint = connectionFailureHint(connectionFailureKind)
+
+  const refreshTrustedKeys = async (): Promise<void> => {
+    const revision = ++trustedKeysRevision.current
+    setTrustedKeysState('loading')
+    setTrustedKeysError(null)
+    try {
+      const nextTrusted = await api.listHostKeys()
+      if (trustedKeysRevision.current !== revision) return
+      setTrustedKeys(nextTrusted)
+      setTrustedKeysState('ready')
+    } catch (error) {
+      if (trustedKeysRevision.current !== revision) return
+      const detail = errorMessage(error)
+      setTrustedKeysError(detail)
+      setTrustedKeysState('error')
+    }
+  }
 
   useEffect(() => {
     const lifecycle = { disposed: false }
     const revision = ++keyInventoryRevision.current
-    void api.listHostKeys().then((nextTrusted) => {
-      if (!lifecycle.disposed) setTrustedKeys(nextTrusted)
-    }).catch((error: unknown) => {
-      if (!lifecycle.disposed) setMessage(errorMessage(error))
-    })
     void api.listKeys().then((nextPrivate) => {
       if (!lifecycle.disposed && keyInventoryRevision.current === revision) {
         setPrivateKeys(nextPrivate)
@@ -116,6 +177,31 @@ export function HostPanel(): React.JSX.Element {
     })
     return () => { lifecycle.disposed = true }
   }, [])
+
+  useEffect(() => {
+    if (configRevision >= 0) void refreshTrustedKeys()
+    return () => { trustedKeysRevision.current += 1 }
+  }, [configRevision])
+
+  useEffect(() => {
+    setCandidates([])
+    setTestResult(null)
+    setTestedAt(null)
+  }, [
+    draft.id,
+    draft.hostname,
+    draft.port,
+    draft.username,
+    draft.authMethod,
+    draft.identityFile,
+    draft.proxyJump,
+    draft.advanced?.connectTimeoutSeconds,
+    draft.advanced?.serverAliveIntervalSeconds,
+    draft.advanced?.serverAliveCountMax,
+    draft.advanced?.tcpKeepAlive,
+    draft.advanced?.compression,
+    draft.advanced?.identitiesOnly,
+  ])
 
   const patch = <K extends keyof HostDraft>(key: K, value: HostDraft[K]): void => {
     setDraft((current) => ({ ...current, [key]: value }))
@@ -130,32 +216,67 @@ export function HostPanel(): React.JSX.Element {
     try { await operation() } catch (error) { setMessage(errorMessage(error)) } finally { setActionBusy(false) }
   }
 
+  const ensureSavedConnection = (): boolean => {
+    if (!draft.id) {
+      setMessage('请先保存主机。')
+      return false
+    }
+    if (!savedConnectionMatchesDraft) {
+      setMessage('当前连接资料有未保存修改，请先保存后再扫描或测试，避免使用旧配置。')
+      return false
+    }
+    return true
+  }
+
   const save = async (): Promise<void> => {
     const validation = validateHostDraft(draft)
     if (validation) { setMessage(validation); return }
     await run(async () => {
       const host = await saveHost(draft)
       setDraft(draftFromHost(host))
-      setMessage('主机配置已保存。')
+      setCandidates([])
+      setTestResult(null)
+      setTestedAt(null)
+      setMessage('主机配置已保存。已有本机 SSH 信任记录会直接复用。')
     })
   }
 
   const scan = async (): Promise<void> => {
-    if (!draft.id) { setMessage('请先保存主机。'); return }
+    if (!ensureSavedConnection()) return
+    const requestRevision = draftConnectionRef.current.revision
     await run(async () => {
       const keys = await api.scanHostKeys(draft.id ?? '')
+      if (draftConnectionRef.current.revision !== requestRevision) return
       setCandidates(keys)
       setMessage(keys.length ? '请通过独立可信渠道核对 SHA-256 指纹。' : '目标没有返回可用主机密钥。')
     })
   }
 
   const accept = async (candidate: HostKeyCandidate): Promise<void> => {
-    if (!draft.id || candidate.mismatch) return
+    if (candidate.mismatch || !ensureSavedConnection()) return
+    const requestRevision = draftConnectionRef.current.revision
     await run(async () => {
       await api.acceptHostKey(draft.id ?? '', candidate)
-      setTrustedKeys(await api.listHostKeys())
+      await refreshTrustedKeys()
+      if (draftConnectionRef.current.revision !== requestRevision) return
       setCandidates([])
+      setTestResult(null)
+      setTestedAt(null)
       setMessage(`已信任 ${candidate.algorithm} ${candidate.sha256Fingerprint}`)
+    })
+  }
+
+  const testConnection = async (): Promise<void> => {
+    if (!ensureSavedConnection()) return
+    const requestRevision = draftConnectionRef.current.revision
+    await run(async () => {
+      const result = await api.testConnection(draft.id ?? '')
+      if (draftConnectionRef.current.revision !== requestRevision) return
+      setTestResult(result)
+      setTestedAt(new Date().toLocaleString())
+      if (!result.success && classifyConnectionFailure(result.error) === 'missing-host-key') {
+        setMessage('连接被严格主机校验拒绝：当前端点还没有本地信任记录。已有本机 SSH known_hosts 会直接复用；没有记录时请先扫描并核对指纹。')
+      }
     })
   }
 
@@ -183,7 +304,11 @@ export function HostPanel(): React.JSX.Element {
     if (!importPath.trim()) { setMessage('请输入 OpenSSH config 路径。'); return }
     await run(async () => {
       const result = await importSshConfig(importPath.trim())
-      setMessage(`已导入 ${String(result.imported.length)} 台主机；跳过 ${String(result.skipped.length)} 项。${result.warnings[0] ? ` ${result.warnings[0]}` : ''}`)
+      const warning = result.warnings[0] ? ` ${result.warnings[0]}` : ''
+      setCandidates([])
+      setTestResult(null)
+      setTestedAt(null)
+      setMessage(`已导入 ${String(result.imported.length)} 台主机；跳过 ${String(result.skipped.length)} 项。已有本机 SSH 信任记录会直接复用。${warning}`)
     })
   }
 
@@ -268,7 +393,7 @@ export function HostPanel(): React.JSX.Element {
             <label><span>分组（逗号分隔）</span><input value={draft.groups.join(', ')} onChange={(event) => patch('groups', event.target.value.split(',').map((value) => value.trim()).filter(Boolean))} /></label>
             <label className="toggle"><input type="checkbox" checked={draft.monitorEnabled ?? true} onChange={(event) => patch('monitorEnabled', event.target.checked)} /><span>应用启动时自动监控此主机</span></label>
           </div>
-          <p className="muted">跳板必须先作为独立主机保存并确认指纹。RemoteDeck 会为跳板单独应用其端口、身份与专用 known_hosts；跳板认证必须能在批处理模式下完成。</p>
+          <p className="muted">跳板必须先作为独立主机保存；已有本机 SSH 信任记录会直接复用，只有新端点或指纹变化时才需要扫描核对。RemoteDeck 会为跳板单独应用其端口、身份与专用 known_hosts；跳板认证必须能在批处理模式下完成。</p>
           {isUsedAsJump && <p className="inline-message">此主机正被其他配置用作跳板，因此必须保持直连。</p>}
           <details className="advanced-settings">
             <summary>高级 OpenSSH 选项</summary>
@@ -285,11 +410,24 @@ export function HostPanel(): React.JSX.Element {
 
         <section className="card trust-card">
           <div className="card-title"><Fingerprint size={17} /><h2>主机密钥信任</h2></div>
-          <p className="muted">首次使用必须核对指纹；密钥变化时禁止直接覆盖，需先核验并删除旧记录。</p>
+          <p className="muted">当前端点：<code>{draft.hostname || '未填写'}:{String(draft.port)}</code></p>
+          <p className="muted">已有本机 SSH known_hosts 记录会直接复用；只有没有记录或指纹变化时，才需要扫描并通过独立可信渠道核对。</p>
+          {sshTrustWarnings.length > 0 && <details className="advanced-settings"><summary>本机 SSH 配置提示</summary><div className="muted">{sshTrustWarnings.map((warning) => <p key={warning}>{warning}</p>)}</div></details>}
           {selectedJump && <p className="muted">目标候选将由已信任跳板“{selectedJump.alias}”扫描；下方显示和接受的仍是目标 {draft.hostname}:{String(draft.port)} 的密钥，不是跳板密钥。</p>}
+          {!draft.id
+            ? <p className="inline-message">请先保存当前主机资料，再读取本地信任或测试连接。</p>
+            : !savedConnectionMatchesDraft
+              ? <p className="inline-message">当前表单有未保存的连接修改；请先保存后再扫描或测试。</p>
+              : trustedKeysState === 'loading'
+                ? <p className="muted">正在读取本机 SSH 信任记录……</p>
+                : trustedKeysState === 'error'
+                  ? <p className="inline-message">读取本机 SSH 信任记录失败：{trustedKeysError ?? '未知错误'}。可以稍后重新读取。</p>
+                  : endpointTrusted
+                    ? <p className="inline-message">当前端点已有本地信任记录，可以直接测试连接或打开终端。</p>
+                    : <p className="inline-message">当前端点还没有本地信任记录。先扫描指纹，核对后接受；认证私钥不会自动替代这一步。</p>}
           <div className="button-row wrap">
-            <button disabled={!draft.id || actionBusy} onClick={() => { void scan() }}><RefreshCw size={14} />扫描指纹</button>
-            <button disabled={!draft.id || actionBusy} onClick={() => { void run(async () => { setTestResult(await api.testConnection(draft.id ?? '')); setTestedAt(new Date().toLocaleString()) }) }}><Check size={14} />测试连接</button>
+            <button disabled={!draft.id || !savedConnectionMatchesDraft || actionBusy} onClick={() => { void scan() }}><RefreshCw size={14} />扫描指纹</button>
+            <button disabled={!draft.id || !savedConnectionMatchesDraft || actionBusy} onClick={() => { void testConnection() }}><Check size={14} />测试连接</button>
           </div>
           {candidates.map((candidate) => (
             <article className={candidate.mismatch ? 'fingerprint-card mismatch' : 'fingerprint-card'} key={`${candidate.algorithm}-${candidate.sha256Fingerprint}`}>
@@ -301,7 +439,7 @@ export function HostPanel(): React.JSX.Element {
                 : !candidate.trusted && <button className="primary" disabled={actionBusy} onClick={() => { void accept(candidate) }}>接受并保存</button>}
             </article>
           ))}
-          {testResult && <div className={testResult.success ? 'result-card success' : 'result-card failed'}><strong>{testResult.success ? `连接成功 · ${String(testResult.latencyMs)} ms` : '连接失败'}</strong><small>实际测试时间：{testedAt ?? '未知'}</small><pre>{testResult.serverLine ?? testResult.error ?? ''}</pre></div>}
+          {testResult && <div className={testResult.success ? 'result-card success' : 'result-card failed'}><strong>{testResult.success ? `连接成功 · ${String(testResult.latencyMs)} ms` : '连接失败'}</strong><small>实际测试时间：{testedAt ?? '未知'}</small>{connectionHint && <p className="inline-message">{connectionHint}</p>}<pre>{testResult.serverLine ?? testResult.error ?? ''}</pre></div>}
         </section>
 
         <section className="card key-tools">
@@ -318,13 +456,19 @@ export function HostPanel(): React.JSX.Element {
 
         <section className="card import-card">
           <div className="card-title"><Upload size={17} /><h2>导入 OpenSSH config</h2></div>
-          <p className="muted">仅导入明确支持的 Host、HostName、User、Port、IdentityFile、ProxyJump 与保活选项；ProxyJump 必须能映射到同批或已保存的具体主机。</p>
+          <p className="muted">导入明确支持的 Host、HostName、User、Port、IdentityFile、ProxyJump 与保活选项；已有本机 SSH known_hosts 的匹配记录会直接复用，新端点或指纹变化时才需要扫描核对。ProxyJump 必须能映射到同批或已保存的具体主机。</p>
           <div className="inline-form path-picker"><input value={importPath} onChange={(event) => setImportPath(event.target.value)} placeholder="C:\\Users\\name\\.ssh\\config" /><button disabled={actionBusy} onClick={() => { void chooseImportConfig() }}><FolderOpen size={14} />选择文件</button><button disabled={actionBusy} onClick={() => { void importConfig() }}>导入</button></div>
         </section>
 
         <section className="card trusted-list-card">
           <div className="card-title"><ShieldAlert size={17} /><h2>已信任指纹</h2></div>
-          {trustedKeys.length === 0 ? <p className="muted">暂无信任记录。</p> : <div className="trusted-list">{trustedKeys.map((record) => <article key={record.id}><span><strong>{record.hostname}:{String(record.port)}</strong><code>{record.algorithm} · {record.sha256Fingerprint}</code></span><button className="danger" disabled={actionBusy} onClick={() => { void run(async () => { if (!window.confirm(`删除 ${record.hostname} 的信任记录？`)) return; await api.removeHostKey(record.id); setTrustedKeys(await api.listHostKeys()); setMessage('信任记录已删除。') }) }}><Trash2 size={13} />删除</button></article>)}</div>}
+          {trustedKeysState === 'loading'
+            ? <p className="muted">正在读取本机 SSH 信任记录……</p>
+            : trustedKeysState === 'error'
+              ? <><p className="inline-message">读取失败：{trustedKeysError ?? '未知错误'}</p><button disabled={actionBusy} onClick={() => { void refreshTrustedKeys() }}><RefreshCw size={14} />重新读取</button></>
+              : trustedKeys.length === 0
+                ? <p className="muted">暂无信任记录。保存或导入主机后，匹配的本机 SSH known_hosts 会显示在这里。</p>
+                : <div className="trusted-list">{trustedKeys.map((record) => <article key={record.id}><span><strong>{record.hostname}:{String(record.port)}</strong><code>{record.algorithm} · {record.sha256Fingerprint}</code></span><button className="danger" disabled={actionBusy} onClick={() => { void run(async () => { if (!window.confirm(`删除 ${record.hostname} 的信任记录？`)) return; await api.removeHostKey(record.id); await refreshTrustedKeys(); setCandidates([]); setTestResult(null); setTestedAt(null); setMessage('信任记录已删除。') }) }}><Trash2 size={13} />删除</button></article>)}</div>}
         </section>
       </div>
       {message && <p className="inline-message" role="status">{message}</p>}

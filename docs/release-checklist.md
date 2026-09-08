@@ -2,6 +2,36 @@
 
 This checklist is evidence-driven. A checked item applies only to the exact commit and exact installer recorded with it.
 
+## v2.1.1 local SSH trust compatibility
+
+The patch reuses established local OpenSSH trust while retaining strict checking,
+existing app pins and windowless process creation. See the [change and validation
+record](local-ssh-trust.md) and [release notes](releases/v2.1.1.md).
+
+- Versions: root, web, both Cargo packages, Cargo.lock and NSIS fallback are `2.1.1`.
+- Gates: frontend lint/typecheck/49 tests; Rust formatting/177 core + 34 server +
+  2 Windows lifecycle tests; strict Clippy; native/browser boundary and release
+  build. `pnpm verify` runs the one standalone browser test; its three fixture
+  skips are covered separately by the complete OpenSSH/browser runner.
+- Fixture: all 5 OpenSSH cases and all 4 real browser flows must pass before
+  publication, including local hashed trust imported without repeated acceptance.
+- Package: run `scripts/verify-release.ps1` against the exact v2.1.1 NSIS candidate;
+  record size, SHA-256 and unsigned status in the uploaded manifest and verify
+  the downloaded assets before publishing.
+- Evidence: `.cache/release-2.1.1-verify.log`, `release-2.1.1-openssh-browser.log`,
+  `release-2.1.1-package.log`, `release-2.1.1-installer.log` and advisory audit logs.
+  The annotated tag and uploaded manifest identify the final source commit;
+  the Release links the matching CI run. Publication and checksum claims apply
+  only after observing those remote results.
+- Remaining external acceptance: real third-party Agent accounts, the complete
+  GPU/btop matrix, clean-VM manual upgrade, and injected transfer-promotion rollback.
+
+## Historical v2.1.0 checklist
+
+The following retained candidate notes describe v2.1.0, not the v2.1.1 patch.
+The completed v2.1.0 publication is recorded by its annotated tag and
+[GitHub Release](https://github.com/shilittle/RemoteDeck/releases/tag/v2.1.0).
+
 ## Source and dependency checks
 
 - [x] Root package, `@remotedeck/web`, `remotedeck-core` and `remotedeck-server` versions are aligned at `2.1.0` for the `v2.1.0` release tag.

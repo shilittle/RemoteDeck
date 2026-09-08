@@ -12,7 +12,9 @@ RemoteDeck is a single-user Windows local service. The browser is an untrusted U
 
 ## SSH identity and credentials
 
-The core uses an application-owned `known_hosts` file and never mutates the user's global OpenSSH files. Scanning only displays candidates. Acceptance requires an exact host token, algorithm, public key and SHA-256 match, followed by a fresh scan immediately before an atomic write. An existing changed key hard-fails until the user removes the old trust and independently verifies the replacement.
+The core uses an application-owned `known_hosts` file and never mutates the user's global OpenSSH files. At startup and when saving or importing hosts, it seeds endpoints without an application pin from the current user's existing `.ssh/known_hosts`. Bounded, windowless `ssh-keygen -F` lookups support exact address/port records and hashed tokens. This copies previously established local trust without contacting the server; it is not a network trust-on-first-use decision. An existing application record for any algorithm prevents automatic seeding of that endpoint. Matching revoked, certificate-authority, wildcard or other unsupported records are not converted into ordinary trust; preparation warnings are exposed in the WebUI.
+
+The copied trust is a snapshot, not a live union of both files. Later edits to the global file never overwrite an existing application pin. Scanning only displays candidates. Acceptance requires an exact host token, algorithm, public key and SHA-256 match, followed by a fresh scan immediately before an atomic write. An existing changed key hard-fails until the user removes the old trust and independently verifies the replacement.
 
 Every SSH, SFTP, command, telemetry, key-deployment and tunnel invocation uses system OpenSSH with external config disabled where required, strict host-key checking, the dedicated trust file, bounded output and validated arguments. ProxyJump is resolved from a saved direct host profile; arbitrary proxy commands and shell metacharacters are rejected.
 

@@ -90,7 +90,11 @@ fixtures only; they are not production source or current architecture.
   display SHA-256 fingerprints, require explicit acceptance, rescan before
   persistence, and use `StrictHostKeyChecking=yes` on every connection.
 - The app owns a dedicated `known_hosts` file and never mutates the user's
-  global OpenSSH files.
+  global OpenSSH files. Startup, save and import may seed previously unpinned
+  endpoints from the current user's existing `.ssh/known_hosts`; this reuses
+  established local trust and never accepts a network scan implicitly. Existing
+  app pins take precedence across algorithms. Marked/revoked and unsupported
+  source records must not be flattened into ordinary trusted keys.
 - Passwords and private-key passphrases are never persisted, logged or passed
   through HTTP/JSON arguments. Interactive prompts remain in the PTY.
 - Validate every value used as an OpenSSH argument. Stop only processes created

@@ -25,7 +25,7 @@ use remotedeck_core::{
         SftpMkdirRequest, SftpRenameRequest, SftpService, TransferDirection, TransferJob,
         TransferRegistry, UploadRequest,
     },
-    ssh::{SshRuntime, TrustedHostKey},
+    ssh::{SshRuntime, TrustedHostKey, default_user_known_hosts_path},
     store::AppRepository,
     telemetry::{
         BtopStatus, ProcessSignalRequest, TelemetryOptions, TelemetryRegistry, TelemetrySnapshot,
@@ -43,6 +43,8 @@ const COMMAND_CONCURRENCY: usize = 8;
 pub(crate) struct AppState {
     configuration: tokio::sync::Mutex<()>,
     config_revision: std::sync::atomic::AtomicU64,
+    local_known_hosts_paths: Vec<PathBuf>,
+    local_trust_warnings: std::sync::Mutex<Vec<String>>,
     pub(crate) repository: AppRepository,
     pub(crate) ssh: SshRuntime,
     pub(crate) terminals: TerminalRegistry,
@@ -207,8 +209,13 @@ async fn delete_host(app: AppContext, host_id: String) -> AppResult<()> {
     }
 }
 
-fn import_ssh_config(state: &AppState, config_path: String) -> AppResult<SshImportResult> {
-    key_service::import_ssh_config(&state.repository, &config_path)
+async fn import_ssh_config(app: &AppContext, config_path: String) -> AppResult<SshImportResult> {
+    let mut result = key_service::import_ssh_config(&app.state.repository, &config_path)?;
+    // Reimport also repairs profiles imported by older versions, without requiring
+    // the user to delete/recreate their already-saved hosts.
+    let hosts = app.state.repository.snapshot().hosts;
+    result.warnings.extend(app.seed_local_trust(&hosts).await);
+    Ok(result)
 }
 
 async fn scan_host_keys(app: AppContext, host_id: String) -> AppResult<Vec<HostKeyCandidate>> {
@@ -1122,6 +1129,18 @@ pub(crate) struct AppContext {
 
 impl AppContext {
     pub(crate) fn open(directory: PathBuf, hub: EventHub) -> AppResult<Self> {
+        Self::open_with_local_trust_paths(
+            directory,
+            hub,
+            default_user_known_hosts_path().into_iter().collect(),
+        )
+    }
+
+    pub(crate) fn open_with_local_trust_paths(
+        directory: PathBuf,
+        hub: EventHub,
+        local_known_hosts_paths: Vec<PathBuf>,
+    ) -> AppResult<Self> {
         let repository = AppRepository::open(directory)?;
         let ssh = SshRuntime::discover_with_repository(repository.clone());
         let sftp = SftpService::new(ssh.clone());
@@ -1135,6 +1154,8 @@ impl AppContext {
             state: Arc::new(AppState {
                 configuration: tokio::sync::Mutex::new(()),
                 config_revision: std::sync::atomic::AtomicU64::new(0),
+                local_known_hosts_paths,
+                local_trust_warnings: std::sync::Mutex::new(Vec::new()),
                 repository,
                 ssh,
                 sftp,
@@ -1177,6 +1198,52 @@ impl AppContext {
             }
         });
         Ok(context)
+    }
+
+    async fn seed_local_trust(&self, hosts: &[HostProfile]) -> Vec<String> {
+        if hosts.is_empty() {
+            return Vec::new();
+        }
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            self.state.ssh.seed_trusted_keys_from_local_known_hosts(
+                hosts,
+                &self.state.local_known_hosts_paths,
+            ),
+        )
+        .await;
+        let warnings = match result {
+            Ok(Ok(result)) => {
+                let mut warnings = result.source_warnings;
+                for host in result.hosts {
+                    warnings.extend(host.warnings);
+                }
+                warnings
+            }
+            Ok(Err(error)) => vec![format!(
+                "本机 SSH 信任记录未能复用：{error}。仍执行严格主机密钥检查。"
+            )],
+            Err(_) => vec![
+                "读取本机 SSH 信任记录超过 15 秒；未完成的主机可重新保存后重试，或手动核验指纹。"
+                    .to_owned(),
+            ],
+        };
+        let mut retained = self
+            .state
+            .local_trust_warnings
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for warning in &warnings {
+            if retained.len() < 128 && !retained.contains(warning) {
+                retained.push(warning.clone());
+            }
+        }
+        warnings
+    }
+
+    pub(crate) async fn initialize_local_trust(&self) {
+        self.seed_local_trust(&self.state.repository.snapshot().hosts)
+            .await;
     }
     pub(crate) fn autostart(&self) {
         let initial = self.state.repository.snapshot();
@@ -1423,12 +1490,16 @@ pub(crate) async fn dispatch(
         "pick_save_path" => {
             serde_json::to_value(native::pick_save_path(argument(&args, "suggestedName")?).await?)?
         }
-        "save_host" => serde_json::to_value(save_host(state, argument(&args, "draft")?)?)?,
+        "save_host" => {
+            let host = save_host(state, argument(&args, "draft")?)?;
+            app.seed_local_trust(std::slice::from_ref(&host)).await;
+            serde_json::to_value(host)?
+        }
         "delete_host" => {
             serde_json::to_value(delete_host(app.clone(), argument(&args, "hostId")?).await?)?
         }
         "import_ssh_config" => {
-            serde_json::to_value(import_ssh_config(state, argument(&args, "configPath")?)?)?
+            serde_json::to_value(import_ssh_config(&app, argument(&args, "configPath")?).await?)?
         }
         "scan_host_keys" => {
             serde_json::to_value(scan_host_keys(app.clone(), argument(&args, "hostId")?).await?)?
@@ -1641,6 +1712,12 @@ pub(crate) async fn dispatch(
             .emit("resync", serde_json::json!({"configRevision":revision}));
     }
     if command == "bootstrap" {
+        result["sshTrustWarnings"] = serde_json::to_value(
+            &*state
+                .local_trust_warnings
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()),
+        )?;
         result["configRevision"] = state
             .config_revision
             .load(std::sync::atomic::Ordering::SeqCst)

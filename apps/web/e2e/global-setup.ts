@@ -1,5 +1,5 @@
 import { createServer } from 'node:net'
-import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -14,6 +14,8 @@ interface Backend { executable: string }
 
 export default async function globalSetup(): Promise<() => Promise<void>> {
   const dataDir = await mkdtemp(join(tmpdir(), 'remotedeck-e2e-'))
+  // Keep host-trust discovery isolated from the developer's actual SSH files.
+  await mkdir(join(dataDir, 'home', '.ssh'), { recursive: true })
   const launchFile = join(dataDir, 'launch.json')
   const port = await freePort()
   const viteMode = process.env.REMOTEDECK_E2E_VITE === '1'
@@ -76,7 +78,9 @@ async function runBuild(command: string, args: string[], cwd: string, label: str
 }
 
 function launchBackend(backend: Backend, args: string[], stdio: 'pipe' | 'ignore'): ChildProcess {
-  return spawn(backend.executable, args, { cwd: repositoryRoot, stdio, windowsHide: true })
+  const dataDir = args[args.indexOf('--data-dir') + 1]
+  const home = join(dataDir, 'home')
+  return spawn(backend.executable, args, { cwd: repositoryRoot, stdio, windowsHide: true, env: { ...process.env, USERPROFILE: home, HOME: home } })
 }
 
 async function freePort(): Promise<number> {

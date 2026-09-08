@@ -1010,7 +1010,7 @@ dependencies = [
 
 [[package]]
 name = "remotedeck-core"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "base64",
  "chrono",
@@ -1028,7 +1028,7 @@ dependencies = [
 
 [[package]]
 name = "remotedeck-server"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "axum",
  "chrono",

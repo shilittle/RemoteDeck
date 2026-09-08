@@ -131,6 +131,7 @@ export interface AppSettings {
 }
 
 export interface BootstrapPayload {
+  sshTrustWarnings?: string[]
   configRevision: number
   appVersion: string
   settings: AppSettings

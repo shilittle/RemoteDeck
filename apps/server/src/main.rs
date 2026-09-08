@@ -318,6 +318,9 @@ async fn run() -> Result<(), Box<dyn Error>> {
     let auth = Auth::new(port, control_token.clone(), options.dev_origin.clone());
     let hub = EventHub::default();
     let context = api::AppContext::open(directory.clone(), hub.clone())?;
+    // Reuse trust already established by local OpenSSH before any monitor or
+    // forwarding child can start. This never scans or accepts a network key.
+    context.initialize_local_trust().await;
     let server = Server::new(context, auth, hub);
     let mut primary: Result<(), Box<dyn Error>> = guard
         .publish(RuntimeDescriptor {

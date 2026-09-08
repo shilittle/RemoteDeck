@@ -63,6 +63,7 @@ interface AppStore {
   busy: boolean
   error: string | null
   appVersion: string
+  sshTrustWarnings: string[]
   configRevision: number
   configEpoch: number
   minimumConfigRevision: number | null
@@ -253,6 +254,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         return {
           loading: false,
           appVersion: payload.appVersion,
+          sshTrustWarnings: payload.sshTrustWarnings ?? [],
           configRevision: payload.configRevision,
           minimumConfigRevision: null,
           settings: normalizeSettings(payload.settings),
@@ -282,6 +284,7 @@ export const useAppStore = create<AppStore>((set, get) => {
   busy: false,
   error: null,
   appVersion: '',
+  sshTrustWarnings: [],
   configRevision: -1,
   configEpoch: 0,
   minimumConfigRevision: null,

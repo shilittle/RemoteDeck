@@ -8,7 +8,7 @@ SetDatablockOptimize on
   !define PRODUCT_NAME "RemoteDeck"
 !endif
 !ifndef APP_VERSION
-  !define APP_VERSION "2.1.0"
+  !define APP_VERSION "2.1.1"
 !endif
 !ifndef APP_BINARY
   !error "APP_BINARY must point to the release RemoteDeck.exe"

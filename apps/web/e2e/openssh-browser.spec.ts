@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createHmac } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { openLaunchedPage } from './helpers'
 
@@ -19,7 +20,7 @@ test.describe('real OpenSSH browser workflow', () => {
     if (!fixture) throw new Error('OpenSSH fixture configuration was not supplied.')
 
     const csrf = await openWithCsrf(page)
-    const host = await savePrivateKeyHost(page, fixture)
+    const host = await savePrivateKeyHost(page, fixture, csrf)
     await verifyUntrustedConnectionIsRejectedInUi(page)
     await trustHostInUi(page)
     const sessionId = await verifyTerminalReconnect(page)
@@ -27,6 +28,51 @@ test.describe('real OpenSSH browser workflow', () => {
     await verifyTransferThroughAuthenticatedApi(page, csrf, host.id)
     await verifyLocalTunnelThroughAuthenticatedApi(page, csrf, host.id, fixture.tunnelPort)
     await browserApi<undefined>(page, csrf, 'close_terminal', { sessionId })
+  })
+
+  test('imports local SSH config with hashed existing trust and connects without repeated confirmation', async ({ page }) => {
+    test.setTimeout(120_000)
+    if (!fixture) throw new Error('OpenSSH fixture configuration was not supplied.')
+    const csrf = await openWithCsrf(page)
+    await browserApi(page, csrf, 'update_settings', { patch: { onboardingCompleted: true } })
+    const probe = await browserApi<HostResponse>(page, csrf, 'save_host', { draft: {
+      alias: 'local-trust-fixture-probe', hostname: '127.0.0.1', port: fixture.directPort,
+      username: 'remotedeck', authMethod: 'private_key', identityFile: fixture.identity,
+      monitorEnabled: false, groups: []
+    } })
+    // Fixture setup models an already-confirmed local SSH record. It writes only
+    // the disposable service's fake home, never the developer's actual known_hosts.
+    const candidates = await browserApi<Array<{ hostToken: string; algorithm: string; publicKeyBase64: string }>>(page, csrf, 'scan_host_keys', { hostId: probe.id })
+    const key = candidates.find((candidate) => candidate.algorithm === 'ssh-ed25519')
+    expect(key).toBeDefined()
+    if (!key) throw new Error('Fixture did not return an Ed25519 key.')
+    const records = await browserApi<Array<{ id: string; hostToken: string }>>(page, csrf, 'list_host_keys', {})
+    for (const record of records.filter((record) => record.hostToken === key.hostToken)) {
+      await browserApi(page, csrf, 'remove_host_key', { recordId: record.id })
+    }
+    const runtime = JSON.parse(await readFile(resolve(import.meta.dirname, '..', '.e2e-runtime.json'), 'utf8')) as { dataDir: string }
+    const salt = Buffer.alloc(20, 7)
+    const hash = createHmac('sha1', salt).update(key.hostToken).digest('base64')
+    const source = join(runtime.dataDir, 'home', '.ssh', 'known_hosts')
+    const sourceContents = `|1|${salt.toString('base64')}|${hash} ${key.algorithm} ${key.publicKeyBase64}\n`
+    await writeFile(source, sourceContents)
+    const configPath = join(runtime.dataDir, 'local-config')
+    await writeFile(configPath, `Host local-config-direct\n HostName 127.0.0.1\n Port ${String(fixture.directPort)}\n User remotedeck\n IdentityFile "${fixture.identity.replaceAll('\\', '/')}"\n`)
+    let confirmationRequests = 0
+    page.on('request', (request) => {
+      if (/\/api\/v1\/(?:scan_host_keys|accept_host_key)$/u.test(request.url())) confirmationRequests += 1
+    })
+    await page.getByRole('button', { name: '主机', exact: true }).click()
+    await page.locator('.import-card input').fill(configPath)
+    await page.locator('.import-card').getByRole('button', { name: '导入', exact: true }).click()
+    await page.locator('.host-list .host-item').filter({ hasText: 'local-config-direct' }).click()
+    await expect(page.locator('.trust-card')).toContainText('已有本地信任记录')
+    await page.getByRole('button', { name: '测试连接', exact: true }).click()
+    await expect(page.locator('.result-card.success')).toContainText('连接成功', { timeout: 30_000 })
+    const sessionId = await verifyTerminalReconnect(page)
+    await browserApi(page, csrf, 'close_terminal', { sessionId })
+    expect(confirmationRequests).toBe(0)
+    expect(await readFile(source, 'utf8')).toBe(sourceContents)
   })
 })
 
@@ -54,7 +100,7 @@ async function openWithCsrf(page: Page): Promise<string> {
   return csrf
 }
 
-async function savePrivateKeyHost(page: Page, config: FixtureConfig): Promise<HostResponse> {
+async function savePrivateKeyHost(page: Page, config: FixtureConfig, csrf: string): Promise<HostResponse> {
   const onboarding = page.getByRole('heading', { name: '欢迎使用 RemoteDeck' })
   if (await onboarding.isVisible().catch(() => false)) {
     await page.getByRole('button', { name: '添加第一台主机' }).click()
@@ -73,9 +119,13 @@ async function savePrivateKeyHost(page: Page, config: FixtureConfig): Promise<Ho
   await page.getByRole('button', { name: '保存' }).click()
   const response = await saved
   expect(response.ok()).toBe(true)
-  const body = await response.json() as HostResponse
-  expect(body.id).toEqual(expect.any(String))
-  return body
+  expect(response.status()).toBe(202)
+  await expect(page.getByRole('heading', { name: '主机 · openssh-browser', exact: true })).toBeVisible()
+  const snapshot = await browserApi<{ hosts: Array<HostResponse & { alias: string }> }>(page, csrf, 'bootstrap', {})
+  const host = snapshot.hosts.find((host) => host.alias === 'openssh-browser')
+  expect(host?.id).toEqual(expect.any(String))
+  if (!host) throw new Error('Saved fixture host was not returned by bootstrap.')
+  return host
 }
 
 async function trustHostInUi(page: Page): Promise<void> {
