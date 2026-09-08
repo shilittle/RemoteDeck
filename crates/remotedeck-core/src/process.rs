@@ -72,6 +72,12 @@ mod tests {
     };
 
     #[cfg(windows)]
+    // Windows PowerShell and Add-Type can exceed five seconds on a cold hosted
+    // runner. This deadline covers tool startup; the no-console assertion is
+    // unchanged, and a timed-out async child is terminated on drop.
+    const WINDOWS_CONSOLE_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
+
+    #[cfg(windows)]
     const WINDOWS_CONSOLE_PROBE: &str = r#"
 $signature = @'
 using System;
@@ -157,6 +163,7 @@ Add-Type -TypeDefinition $signature;
     #[tokio::test]
     async fn windows_async_helper_child_has_no_console_window() {
         let child = async_command("powershell.exe")
+            .kill_on_drop(true)
             .args([
                 "-NoLogo",
                 "-NoProfile",
@@ -169,7 +176,7 @@ Add-Type -TypeDefinition $signature;
             .stderr(Stdio::piped())
             .spawn()
             .expect("spawn async PowerShell console probe");
-        let output = tokio::time::timeout(Duration::from_secs(5), child.wait_with_output())
+        let output = tokio::time::timeout(WINDOWS_CONSOLE_PROBE_TIMEOUT, child.wait_with_output())
             .await
             .expect("async PowerShell console probe timeout")
             .expect("wait async PowerShell console probe");

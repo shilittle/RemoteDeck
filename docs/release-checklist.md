@@ -43,8 +43,10 @@ Fill these fields only from the exact source commit and exact candidate artifact
 - Frontend: lint/typecheck pass; 47 unit tests pass; 3 real browser workflows pass with disposable OpenSSH fixtures.
 - Rust: format and strict Clippy pass; 170 core + 32 server + 2 Windows CLI tests pass. The 5 normally ignored fixture tests pass separately.
 - OpenSSH: `pnpm test:e2e:openssh` equivalent runner with pinned official ECR fixture image; Windows OpenSSH 9.5p1 and fixture-only Curve25519 KEX. Five SSH cases and three browser workflows pass.
-- Installer: `dist/RemoteDeck-2.1.0-win-x64-setup.exe`, 1,381,765 bytes, Authenticode `NotSigned`, SHA-256 `bf5a2d3892975cd0a212d0c69cd0d89ba8930e47bd492fa9641fca6fcf75a55d`.
+- Installer: `dist/RemoteDeck-2.1.0-win-x64-setup.exe`, 1,381,612 bytes, Authenticode `NotSigned`, SHA-256 `481f33283068be1421af8d7985eea6caf1a7f266b7cdc00cc38224ec88d9635f`.
 - Installed runtime: `/health`, embedded assets, browser authentication/bootstrap, independent PID, clean `--stop`, uninstall, data retention and shell-state restoration pass in isolated directories containing spaces.
 - Windowless process fix: native helpers and GUI-subsystem builds pass their regressions; two observed Windows acceptance intervals totaling about 13 minutes have zero console show events. The installed local binary was updated and the production service remains stopped. See [latest fix validation](windowless-processes.md).
 - Remaining manual/external checks and original refactor evidence: [validation record](refactor-validation.md). This is a local candidate acceptance record, not proof of a remote CI or clean-VM pass.
-- Version 2.1.0 local logs: `.cache/release-2.1.0-verify.log`, `.cache/release-2.1.0-openssh-browser.log`, `.cache/release-2.1.0-package.log` and `.cache/release-2.1.0-installer.log`. Advisory scans are recorded in the matching `pnpm-audit` and `cargo-audit` logs.
+- Version 2.1.0 local logs: `.cache/release-2.1.0-verify.log`, `.cache/release-2.1.0-openssh-browser.log`, `.cache/release-2.1.0-package-final.log` and `.cache/release-2.1.0-installer-final.log`. Advisory scans are recorded in the matching `pnpm-audit` and `cargo-audit` logs.
+
+The first hosted Windows run exceeded the console probe's five-second PowerShell cold-start deadline. The probe now allows 30 seconds, keeps the `GetConsoleWindow() == 0` assertion, and terminates its child on timeout. Core tests and strict Clippy were rerun locally before rebuilding and rechecking the installer; the replacement CI run is linked from the final Release.
